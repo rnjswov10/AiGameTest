@@ -68,6 +68,23 @@ func set_lobby_state(lobby_state: Dictionary) -> void:
 	else:
 		lobby_id_label.text = "Lobby ID: -"
 
+	var local_name := str(lobby_state.get("local_name", "You"))
+	var local_steam_id := int(lobby_state.get("local_steam_id", 0))
+	var peer_name := str(lobby_state.get("peer_name", ""))
+	var peer_steam_id := int(lobby_state.get("peer_steam_id", 0))
+	var opponent_text := "Opponent: Waiting"
+	if peer_steam_id != 0:
+		if peer_name == "":
+			peer_name = "Steam User"
+		opponent_text = "Opponent: %s (%d)" % [peer_name, peer_steam_id]
+
+	lobby_id_label.text = "%s\nYou: %s (%d)\n%s" % [
+		lobby_id_label.text,
+		local_name,
+		local_steam_id,
+		opponent_text,
+	]
+
 	ready_button.text = "Cancel Ready" if local_ready else "Ready"
 	ready_button.disabled = not online or match_active
 	copy_lobby_button.disabled = lobby_id <= 0
@@ -249,10 +266,11 @@ func _create_lobby_panel() -> void:
 	ready_button.disabled = true
 	lobby_panel.add_child(ready_button)
 
-	lobby_id_label = _make_settings_label(Vector2(18.0, 266.0), Vector2(522.0, 26.0), "Lobby ID: -", 13)
+	lobby_id_label = _make_settings_label(Vector2(18.0, 262.0), Vector2(522.0, 56.0), "Lobby ID: -", 13)
+	lobby_id_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	lobby_panel.add_child(lobby_id_label)
 
-	lobby_status_label = _make_settings_label(Vector2(18.0, 294.0), Vector2(522.0, 42.0), "", 13)
+	lobby_status_label = _make_settings_label(Vector2(18.0, 320.0), Vector2(522.0, 28.0), "", 13)
 	lobby_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lobby_status_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	lobby_panel.add_child(lobby_status_label)
