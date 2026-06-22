@@ -1,17 +1,30 @@
 class_name MatchController
 extends Node
 
+enum MatchPhase {
+	COMBAT,
+	CLEANUP,
+	RELIC_SELECT,
+	GAME_OVER,
+}
+
 const PATH_LENGTH := 320.0
 const BASE_SPAWN_INTERVAL := 2.35
-const WAVE_DURATION := 24.0
+const STAGE_BASE_DURATION := 30.0
+const STAGE_DURATION_GAIN := 2.0
+const STAGE_COMPLETE_GOLD := 20
+const ATTACK_WAVE_BASE_COUNT := 3
 
 var rng := RandomNumberGenerator.new()
+var relic_library := RelicLibrary.new()
 var match_seed: int = 0
 var players: Array = []
 var match_time: float = 0.0
+var stage_number: int = 1
 var wave_number: int = 1
+var phase: int = MatchPhase.COMBAT
+var stage_timer: float = 0.0
 var spawn_timer: float = 0.0
-var wave_timer: float = 0.0
 var game_over: bool = false
 var winner_text: String = ""
 var last_event_text: String = ""
@@ -29,41 +42,41 @@ func start_match(initial_seed: int = 0) -> void:
 	players.append(PlayerState.new(0, "Player A"))
 	players.append(PlayerState.new(1, "Player B"))
 	match_time = 0.0
-	wave_number = 1
-	spawn_timer = 3.0
-	wave_timer = 0.0
+	stage_number = 1
+	wave_number = stage_number
 	game_over = false
 	winner_text = ""
 	last_event_text = "Match seed %d" % match_seed
+	_start_stage()
 
 
 func _process(delta: float) -> void:
 	if game_over:
 		return
 
-	match_time += delta
-	wave_timer += delta
-
 	for player in players:
 		player.tick(delta)
 
-	if wave_timer >= WAVE_DURATION:
-		wave_timer = 0.0
-		wave_number += 1
-		last_event_text = "Wave %d started." % wave_number
+	if phase == MatchPhase.RELIC_SELECT:
+		return
 
-	spawn_timer -= delta
-	if spawn_timer <= 0.0:
-		_spawn_regular_wave()
-		spawn_timer = maxf(0.85, BASE_SPAWN_INTERVAL - float(wave_number - 1) * 0.07)
-
+	match_time += delta
+	_update_challenge_boss_timers()
 	_update_combat(delta)
 	_update_monsters(delta)
 	_check_game_over()
 
+	if game_over:
+		return
+
+	if phase == MatchPhase.COMBAT:
+		_update_combat_phase(delta)
+	elif phase == MatchPhase.CLEANUP:
+		_update_cleanup_phase()
+
 
 func select_cell(player_id: int, cell: Vector2i) -> void:
-	if game_over:
+	if game_over or phase == MatchPhase.RELIC_SELECT:
 		return
 	if not _is_valid_player_id(player_id):
 		return
@@ -71,7 +84,7 @@ func select_cell(player_id: int, cell: Vector2i) -> void:
 
 
 func summon_tower(player_id: int) -> void:
-	if game_over:
+	if game_over or phase == MatchPhase.RELIC_SELECT:
 		return
 	if not _is_valid_player_id(player_id):
 		return
@@ -79,15 +92,37 @@ func summon_tower(player_id: int) -> void:
 
 
 func merge_selected_tower(player_id: int) -> void:
-	if game_over:
+	if game_over or phase == MatchPhase.RELIC_SELECT:
 		return
 	if not _is_valid_player_id(player_id):
 		return
 	players[player_id].merge_selected_tower()
 
 
+func summon_challenge_boss(player_id: int) -> void:
+	if game_over or phase == MatchPhase.RELIC_SELECT:
+		return
+	if not _is_valid_player_id(player_id):
+		return
+
+	var player: PlayerState = players[player_id]
+	if player.challenge_boss_used_this_stage:
+		player.set_message("Challenge boss already used this stage.")
+		return
+
+	var boss := MonsterData.new(MonsterData.MonsterType.CHALLENGE_BOSS, stage_number, 0.0)
+	var time_bonus := player.get_relic_sum("boss_time_bonus", "seconds")
+	boss.boss_time_limit += time_bonus
+	player.monsters.append(boss)
+	player.challenge_boss_used_this_stage = true
+	player.challenge_boss_instance_id = boss.get_instance_id()
+	player.challenge_boss_timer = boss.boss_time_limit
+	player.set_message("Challenge boss summoned.")
+	last_event_text = "%s challenged a boss." % player.display_name
+
+
 func send_attack_wave(player_id: int) -> void:
-	if game_over:
+	if game_over or phase == MatchPhase.RELIC_SELECT:
 		return
 	if not _is_valid_player_id(player_id):
 		return
@@ -106,7 +141,9 @@ func send_attack_wave(player_id: int) -> void:
 	if secondary_tower_type >= 0:
 		secondary_monster_type = _monster_type_for_tower_type(secondary_tower_type)
 
-	var monster_count := 3 + int(floor(float(wave_number) / 3.0))
+	var monster_count := ATTACK_WAVE_BASE_COUNT + int(floor(float(stage_number) / 3.0))
+	monster_count = defender.consume_curse_defense_reduction(monster_count)
+
 	for index in range(monster_count):
 		var monster_type := primary_monster_type
 		if secondary_tower_type >= 0 and index % 3 == 2:
@@ -114,7 +151,17 @@ func send_attack_wave(player_id: int) -> void:
 		_spawn_monster(defender, monster_type, 8.0 + float(index) * 12.0)
 
 	if primary_monster_type == MonsterData.MonsterType.HEXED:
-		defender.lock_random_tower(rng, 5.0)
+		defender.lock_random_tower(rng, 5.0 + attacker.get_hex_duration_bonus())
+
+	if primary_monster_type == MonsterData.MonsterType.TOXIC:
+		var slow_duration := attacker.get_relic_max("toxic_wave_tower_slow", "duration")
+		if slow_duration > 0.0 and _player_has_tower_type(attacker, TowerData.TowerType.CURSE):
+			defender.tower_slow_timer = maxf(defender.tower_slow_timer, slow_duration)
+			defender.set_message("Plague Hex slowed towers.")
+
+	var extra_hex_chance := attacker.get_relic_chance("extra_hex_monster_chance", "chance", TowerData.TowerType.CURSE)
+	if extra_hex_chance > 0.0 and rng.randf() < extra_hex_chance:
+		_spawn_monster(defender, MonsterData.MonsterType.HEXED, 48.0)
 
 	var attack_name := MonsterData.get_display_name(primary_monster_type)
 	last_event_text = "%s sent %s pressure to %s." % [
@@ -125,13 +172,137 @@ func send_attack_wave(player_id: int) -> void:
 	attacker.set_message("Sent %s wave." % attack_name)
 
 
+func choose_relic(player_id: int, option_index: int) -> void:
+	if phase != MatchPhase.RELIC_SELECT:
+		return
+	if not _is_valid_player_id(player_id):
+		return
+
+	var player: PlayerState = players[player_id]
+	if player.relic_offer == null:
+		return
+
+	var relic := player.relic_offer.choose(option_index)
+	if relic == null:
+		return
+
+	player.add_relic(relic)
+	last_event_text = "%s picked %s." % [player.display_name, relic.relic_name]
+
+	if _all_players_selected_relics():
+		_start_next_stage()
+
+
+func reroll_relics(player_id: int) -> void:
+	if phase != MatchPhase.RELIC_SELECT:
+		return
+	if not _is_valid_player_id(player_id):
+		return
+
+	var player: PlayerState = players[player_id]
+	if player.relic_offer == null or player.relic_offer.selected:
+		return
+
+	var cost := get_reroll_cost(player)
+	var was_free := rng.randf() < player.get_free_reroll_chance()
+	if not was_free:
+		if player.gold < cost:
+			player.set_message("Not enough gold to reroll.")
+			return
+		player.gold -= cost
+
+	var new_options := relic_library.create_offer(rng, player, stage_number)
+	player.relic_offer.replace_options(new_options, was_free)
+	if was_free:
+		player.set_message("Luck made reroll free.")
+	else:
+		player.set_message("Rerolled relics for %d gold." % cost)
+
+
+func get_reroll_cost(player: PlayerState) -> int:
+	return maxi(0, 50 + stage_number * 10 - player.get_reroll_discount())
+
+
+func get_phase_name() -> String:
+	match phase:
+		MatchPhase.COMBAT:
+			return "Combat"
+		MatchPhase.CLEANUP:
+			return "Cleanup"
+		MatchPhase.RELIC_SELECT:
+			return "Relic Select"
+		MatchPhase.GAME_OVER:
+			return "Game Over"
+		_:
+			return "Unknown"
+
+
+func get_next_event_boss_stage() -> int:
+	return int(ceil(float(stage_number) / 10.0)) * 10
+
+
+func _start_stage() -> void:
+	phase = MatchPhase.COMBAT
+	wave_number = stage_number
+	stage_timer = _get_stage_duration()
+	spawn_timer = 1.0
+
+	for player in players:
+		player.start_stage()
+
+	if stage_number % 10 == 0:
+		for player in players:
+			_spawn_monster(player, MonsterData.MonsterType.EVENT_BOSS, 0.0)
+		last_event_text = "Event bosses appeared."
+	else:
+		last_event_text = "Stage %d started." % stage_number
+
+
+func _start_next_stage() -> void:
+	stage_number += 1
+	_start_stage()
+
+
+func _get_stage_duration() -> float:
+	return minf(48.0, STAGE_BASE_DURATION + float(stage_number - 1) * STAGE_DURATION_GAIN)
+
+
+func _update_combat_phase(delta: float) -> void:
+	stage_timer -= delta
+
+	spawn_timer -= delta
+	if spawn_timer <= 0.0:
+		_spawn_regular_wave()
+		spawn_timer = maxf(0.85, BASE_SPAWN_INTERVAL - float(stage_number - 1) * 0.06)
+
+	if stage_timer <= 0.0:
+		phase = MatchPhase.CLEANUP
+		stage_timer = 0.0
+		last_event_text = "Stage %d cleanup started." % stage_number
+
+
+func _update_cleanup_phase() -> void:
+	if _all_monsters_cleared():
+		_enter_relic_select()
+
+
+func _enter_relic_select() -> void:
+	phase = MatchPhase.RELIC_SELECT
+	for player in players:
+		var bonus_gold := STAGE_COMPLETE_GOLD + int(player.get_relic_sum("stage_gold_bonus", "amount"))
+		player.gold += bonus_gold
+		player.relic_offer = RelicOffer.new(relic_library.create_offer(rng, player, stage_number))
+		player.set_message("Stage clear +%d gold." % bonus_gold)
+	last_event_text = "Both players choose a relic."
+
+
 func _spawn_regular_wave() -> void:
 	for player in players:
 		_spawn_monster(player, MonsterData.MonsterType.BASIC, rng.randf_range(-8.0, 8.0))
 
 
 func _spawn_monster(player: PlayerState, monster_type: int, lane_offset: float = 0.0) -> void:
-	player.monsters.append(MonsterData.new(monster_type, wave_number, lane_offset))
+	player.monsters.append(MonsterData.new(monster_type, stage_number, lane_offset))
 
 
 func _update_combat(delta: float) -> void:
@@ -159,6 +330,8 @@ func _update_player_towers(player: PlayerState, delta: float) -> void:
 				continue
 
 			_apply_tower_attack(player, tower, target)
+			if not target.is_dead() and _should_double_attack(player, tower):
+				_apply_tower_attack(player, tower, target)
 			tower.cooldown = tower.get_attack_interval() * player.get_tower_slow_multiplier()
 
 
@@ -186,30 +359,142 @@ func _get_virtual_monster_position(monster: MonsterData) -> Vector2:
 
 func _apply_tower_attack(player: PlayerState, tower: TowerData, target: MonsterData) -> void:
 	var damage := tower.get_damage()
+	damage *= _get_tower_damage_multiplier(player, tower, target)
+	damage *= _get_repeat_target_multiplier(player, tower, target)
+
+	target.last_hit_tower_type = tower.tower_type
 	target.take_damage(damage)
-	player.attack_gauge = minf(PlayerState.ATTACK_GAUGE_COST, player.attack_gauge + tower.get_gauge_bonus())
+
+	if tower.tower_type == TowerData.TowerType.CURSE:
+		var gauge_bonus := tower.get_gauge_bonus()
+		gauge_bonus *= player.get_relic_multiplier("curse_gauge_mult", "multiplier", TowerData.TowerType.CURSE)
+		player.attack_gauge = minf(PlayerState.ATTACK_GAUGE_COST, player.attack_gauge + gauge_bonus)
+		player.add_curse_defense_stack()
+	else:
+		player.attack_gauge = minf(PlayerState.ATTACK_GAUGE_COST, player.attack_gauge + tower.get_gauge_bonus())
 
 	match tower.tower_type:
 		TowerData.TowerType.POISON:
-			target.add_poison(3.0, damage * 0.35)
+			_apply_poison_attack(player, tower, target, damage)
 		TowerData.TowerType.ICE:
-			target.add_slow(1.4 + float(tower.level) * 0.2, 0.58)
+			_apply_ice_attack(player, tower, target)
 		TowerData.TowerType.LIGHTNING:
-			_chain_lightning(player, target, damage * 0.45)
+			_apply_lightning_attack(player, target, damage)
 		TowerData.TowerType.CURSE:
 			target.add_slow(0.8, 0.78)
 
 
+func _apply_poison_attack(player: PlayerState, tower: TowerData, target: MonsterData, damage: float) -> void:
+	var duration := 3.0 * player.get_relic_multiplier("poison_duration_mult", "multiplier", TowerData.TowerType.POISON)
+	var poison_damage := damage * 0.35
+	target.add_poison(duration, poison_damage)
+
+	var immediate_ratio := player.get_relic_max("poison_immediate_damage_ratio", "ratio")
+	if immediate_ratio > 0.0 and _player_has_tower_type(player, TowerData.TowerType.FIRE):
+		target.take_damage(damage * immediate_ratio)
+
+	var extra_chance := player.get_relic_chance("extra_poison_chance", "chance", TowerData.TowerType.POISON)
+	if extra_chance > 0.0 and rng.randf() < extra_chance:
+		var bonus_damage_ratio := player.get_relic_max("extra_poison_chance", "bonus_damage_ratio", TowerData.TowerType.POISON)
+		target.take_damage(damage * bonus_damage_ratio)
+		target.add_poison(duration, poison_damage * 1.35)
+
+
+func _apply_ice_attack(player: PlayerState, tower: TowerData, target: MonsterData) -> void:
+	var duration := (1.4 + float(tower.level) * 0.2)
+	duration *= player.get_relic_multiplier("slow_duration_mult", "multiplier", TowerData.TowerType.ICE)
+	target.add_slow(duration, 0.58)
+
+	var freeze_chance := player.get_relic_chance("ice_freeze_chance", "chance", TowerData.TowerType.ICE)
+	if freeze_chance > 0.0 and rng.randf() < freeze_chance:
+		var freeze_duration := player.get_relic_max("ice_freeze_chance", "duration", TowerData.TowerType.ICE)
+		target.add_freeze(freeze_duration)
+
+
+func _apply_lightning_attack(player: PlayerState, target: MonsterData, damage: float) -> void:
+	_register_lightning_hit(player, target)
+	var chain_damage := damage * 0.45
+	chain_damage *= player.get_relic_multiplier("chain_damage_mult", "multiplier", TowerData.TowerType.LIGHTNING)
+	if target.slow_timer > 0.0 and _player_has_tower_type(player, TowerData.TowerType.ICE):
+		chain_damage *= player.get_relic_multiplier("chain_damage_vs_slow", "multiplier")
+	_chain_lightning(player, target, chain_damage)
+
+
+func _get_tower_damage_multiplier(player: PlayerState, tower: TowerData, target: MonsterData) -> float:
+	var multiplier := player.get_relic_multiplier("damage_multiplier", "multiplier", tower.tower_type)
+
+	for relic in player.relics:
+		if relic.effect_type == "conditional_damage" and relic.targets_tower_type(tower.tower_type):
+			if int(relic.values.get("monster_type", -1)) == target.monster_type:
+				multiplier *= float(relic.values.get("multiplier", 1.0))
+
+	if target.slow_timer > 0.0:
+		multiplier *= player.get_relic_multiplier("slow_damage_taken_mult", "multiplier", TowerData.TowerType.ICE)
+
+	return multiplier
+
+
+func _get_repeat_target_multiplier(player: PlayerState, tower: TowerData, target: MonsterData) -> float:
+	if tower.tower_type != TowerData.TowerType.FIRE:
+		return 1.0
+
+	var target_id := target.get_instance_id()
+	if tower.last_target_instance_id == target_id:
+		tower.repeat_target_hits += 1
+	else:
+		tower.last_target_instance_id = target_id
+		tower.repeat_target_hits = 1
+
+	var step := player.get_relic_max("repeat_target_damage", "step", TowerData.TowerType.FIRE)
+	var max_bonus := player.get_relic_max("repeat_target_damage", "max_bonus", TowerData.TowerType.FIRE)
+	if step <= 0.0:
+		return 1.0
+
+	return 1.0 + minf(max_bonus, step * float(maxi(0, tower.repeat_target_hits - 1)))
+
+
+func _should_double_attack(player: PlayerState, tower: TowerData) -> bool:
+	var min_level := int(player.get_relic_max("high_level_double_attack", "min_level"))
+	if min_level <= 0 or tower.level < min_level:
+		return false
+	if not _player_has_tower_type(player, TowerData.TowerType.FIRE):
+		return false
+	if not _player_has_tower_type(player, TowerData.TowerType.LIGHTNING):
+		return false
+
+	var chance := player.get_relic_chance("high_level_double_attack", "chance")
+	return chance > 0.0 and rng.randf() < chance
+
+
+func _register_lightning_hit(player: PlayerState, target: MonsterData) -> void:
+	target.lightning_hit_count += 1
+	var threshold := int(player.get_relic_max("lightning_repeat_hit_explosion", "threshold", TowerData.TowerType.LIGHTNING))
+	if threshold <= 0 or target.lightning_hit_count < threshold:
+		return
+
+	target.lightning_hit_count = 0
+	var damage := player.get_relic_max("lightning_repeat_hit_explosion", "damage", TowerData.TowerType.LIGHTNING)
+	var radius := player.get_relic_max("lightning_repeat_hit_explosion", "radius", TowerData.TowerType.LIGHTNING)
+	_damage_monsters_near_progress(player, target.progress, radius, damage, target)
+
+
 func _chain_lightning(player: PlayerState, first_target: MonsterData, damage: float) -> void:
 	var hit_count := 0
+	var hit_limit := 2 + int(player.get_relic_sum("chain_extra_hits", "extra_hits", TowerData.TowerType.LIGHTNING))
+
 	for monster in player.monsters:
 		if monster == first_target:
 			continue
 		if absf(monster.progress - first_target.progress) > 65.0:
 			continue
-		monster.take_damage(damage)
+		var chain_damage := damage
+		if monster.slow_timer > 0.0 and _player_has_tower_type(player, TowerData.TowerType.ICE):
+			chain_damage *= player.get_relic_multiplier("chain_damage_vs_slow", "multiplier")
+		monster.last_hit_tower_type = TowerData.TowerType.LIGHTNING
+		monster.take_damage(chain_damage)
+		_register_lightning_hit(player, monster)
 		hit_count += 1
-		if hit_count >= 2:
+		if hit_count >= hit_limit:
 			return
 
 
@@ -228,11 +513,44 @@ func _update_monsters(delta: float) -> void:
 			if monster.progress >= PATH_LENGTH:
 				player.hp -= monster.damage_to_base
 				player.set_message("%s leaked." % MonsterData.get_display_name(monster.monster_type))
+				_clear_challenge_boss_if_needed(player, monster)
 				player.monsters.remove_at(index)
 
 
 func _handle_monster_death(player: PlayerState, monster: MonsterData) -> void:
-	player.add_rewards(monster.reward_gold, monster.reward_gauge)
+	var reward_gold := monster.reward_gold
+	var reward_gauge := monster.reward_gauge
+
+	if monster.monster_type == MonsterData.MonsterType.CHALLENGE_BOSS:
+		var boss_multiplier := player.get_boss_reward_multiplier()
+		var time_ratio := 0.0
+		if monster.boss_time_limit > 0.0:
+			time_ratio = clampf(player.challenge_boss_timer / monster.boss_time_limit, 0.0, 1.0)
+		reward_gold += int((40.0 + 60.0 * time_ratio) * boss_multiplier)
+		reward_gauge += (25.0 + 35.0 * time_ratio) * boss_multiplier
+		player.challenge_boss_instance_id = 0
+		player.challenge_boss_timer = 0.0
+		player.set_message("Challenge boss defeated.")
+	elif monster.monster_type == MonsterData.MonsterType.EVENT_BOSS:
+		var event_multiplier := player.get_boss_reward_multiplier()
+		reward_gold += int(90.0 * event_multiplier)
+		reward_gauge += 55.0 * event_multiplier
+		player.set_message("Event boss defeated.")
+
+	player.add_rewards(reward_gold, reward_gauge)
+
+	if monster.last_hit_tower_type == TowerData.TowerType.FIRE:
+		_apply_fire_death_effects(player, monster)
+	elif monster.last_hit_tower_type == TowerData.TowerType.LIGHTNING:
+		var gauge_bonus := player.get_relic_sum("lightning_kill_gauge", "amount", TowerData.TowerType.LIGHTNING)
+		if gauge_bonus > 0.0:
+			player.attack_gauge = minf(PlayerState.ATTACK_GAUGE_COST, player.attack_gauge + gauge_bonus)
+
+	if monster.was_poisoned:
+		_apply_poison_death_effects(player, monster)
+
+	if monster.was_frozen:
+		_apply_frozen_death_effects(player, monster)
 
 	if monster.monster_type == MonsterData.MonsterType.TOXIC:
 		player.tower_slow_timer = maxf(player.tower_slow_timer, 3.0)
@@ -240,6 +558,155 @@ func _handle_monster_death(player: PlayerState, monster: MonsterData) -> void:
 	elif monster.monster_type == MonsterData.MonsterType.FROST:
 		player.tower_slow_timer = maxf(player.tower_slow_timer, 2.0)
 		player.set_message("Frost armor chilled towers.")
+
+
+func _apply_fire_death_effects(player: PlayerState, monster: MonsterData) -> void:
+	var damage := player.get_relic_max("death_explosion", "damage", TowerData.TowerType.FIRE)
+	var radius := player.get_relic_max("death_explosion", "radius", TowerData.TowerType.FIRE)
+	if damage <= 0.0 or radius <= 0.0:
+		return
+	_damage_monsters_near_progress(player, monster.progress, radius, damage, monster)
+
+
+func _apply_poison_death_effects(player: PlayerState, monster: MonsterData) -> void:
+	var burst_damage := player.get_relic_max("poison_death_burst", "damage", TowerData.TowerType.POISON)
+	var burst_radius := player.get_relic_max("poison_death_burst", "radius", TowerData.TowerType.POISON)
+	var pulses := int(player.get_relic_max("poison_death_burst", "pulses", TowerData.TowerType.POISON))
+	var duration := player.get_relic_max("poison_death_burst", "duration", TowerData.TowerType.POISON)
+	if burst_damage > 0.0 and burst_radius > 0.0:
+		for pulse_index in range(maxi(1, pulses)):
+			_poison_monsters_near_progress(player, monster.progress, burst_radius, burst_damage, duration, monster)
+
+	var spread_count := int(player.get_relic_max("poison_spread_on_death", "count", TowerData.TowerType.POISON))
+	if spread_count <= 0:
+		return
+
+	var spread_duration := player.get_relic_max("poison_spread_on_death", "duration", TowerData.TowerType.POISON)
+	var spread_dps := player.get_relic_max("poison_spread_on_death", "dps", TowerData.TowerType.POISON)
+	var nearest := _find_nearest_monsters(player, monster.progress, spread_count, monster)
+	for target in nearest:
+		target.add_poison(spread_duration, spread_dps)
+
+
+func _apply_frozen_death_effects(player: PlayerState, monster: MonsterData) -> void:
+	var radius := player.get_relic_max("freeze_death_slow", "radius", TowerData.TowerType.ICE)
+	var duration := player.get_relic_max("freeze_death_slow", "duration", TowerData.TowerType.ICE)
+	var multiplier := player.get_relic_max("freeze_death_slow", "multiplier", TowerData.TowerType.ICE)
+	if radius <= 0.0 or duration <= 0.0:
+		return
+
+	for target in player.monsters:
+		if target == monster:
+			continue
+		if absf(target.progress - monster.progress) > radius:
+			continue
+		target.add_slow(duration, multiplier)
+
+
+func _damage_monsters_near_progress(
+	player: PlayerState,
+	origin_progress: float,
+	radius: float,
+	damage: float,
+	source: MonsterData
+) -> void:
+	for target in player.monsters:
+		if target == source:
+			continue
+		if absf(target.progress - origin_progress) > radius:
+			continue
+		target.take_damage(damage)
+
+
+func _poison_monsters_near_progress(
+	player: PlayerState,
+	origin_progress: float,
+	radius: float,
+	damage: float,
+	duration: float,
+	source: MonsterData
+) -> void:
+	for target in player.monsters:
+		if target == source:
+			continue
+		if absf(target.progress - origin_progress) > radius:
+			continue
+		target.take_damage(damage)
+		target.add_poison(duration, damage * 0.25)
+
+
+func _find_nearest_monsters(player: PlayerState, origin_progress: float, count: int, source: MonsterData) -> Array:
+	var nearest: Array = []
+	for target in player.monsters:
+		if target == source:
+			continue
+		_insert_nearest_monster(nearest, target, origin_progress, count)
+	return nearest
+
+
+func _insert_nearest_monster(nearest: Array, target: MonsterData, origin_progress: float, limit: int) -> void:
+	var inserted := false
+	var distance := absf(target.progress - origin_progress)
+	for index in range(nearest.size()):
+		var existing: MonsterData = nearest[index]
+		var existing_distance := absf(existing.progress - origin_progress)
+		if distance < existing_distance:
+			nearest.insert(index, target)
+			inserted = true
+			break
+
+	if not inserted:
+		nearest.append(target)
+
+	while nearest.size() > limit:
+		nearest.pop_back()
+
+
+func _update_challenge_boss_timers() -> void:
+	for player in players:
+		if player.challenge_boss_instance_id == 0:
+			continue
+		if player.challenge_boss_timer > 0.0:
+			continue
+
+		var boss := _find_monster_by_instance_id(player, player.challenge_boss_instance_id)
+		if boss != null:
+			player.monsters.erase(boss)
+
+		var penalty_duration := 8.0 * player.get_boss_penalty_multiplier()
+		player.pending_boss_penalty_timer = maxf(player.pending_boss_penalty_timer, penalty_duration)
+		player.challenge_boss_instance_id = 0
+		player.set_message("Boss failed. Next stage penalty queued.")
+
+
+func _find_monster_by_instance_id(player: PlayerState, instance_id: int) -> MonsterData:
+	for monster in player.monsters:
+		if monster.get_instance_id() == instance_id:
+			return monster
+	return null
+
+
+func _clear_challenge_boss_if_needed(player: PlayerState, monster: MonsterData) -> void:
+	if monster.get_instance_id() != player.challenge_boss_instance_id:
+		return
+	player.challenge_boss_instance_id = 0
+	player.challenge_boss_timer = 0.0
+
+
+func _all_monsters_cleared() -> bool:
+	for player in players:
+		if not player.monsters.is_empty():
+			return false
+	return true
+
+
+func _all_players_selected_relics() -> bool:
+	for player in players:
+		if player.relic_offer == null:
+			return false
+		if not player.relic_offer.selected:
+			return false
+	return true
 
 
 func _check_game_over() -> void:
@@ -257,6 +724,7 @@ func _check_game_over() -> void:
 		winner_text = "Player A wins"
 
 	if game_over:
+		phase = MatchPhase.GAME_OVER
 		last_event_text = winner_text
 
 
@@ -274,6 +742,15 @@ func _monster_type_for_tower_type(tower_type: int) -> int:
 			return MonsterData.MonsterType.HEXED
 		_:
 			return MonsterData.MonsterType.BASIC
+
+
+func _player_has_tower_type(player: PlayerState, tower_type: int) -> bool:
+	for y in range(PlayerState.GRID_SIZE):
+		for x in range(PlayerState.GRID_SIZE):
+			var tower := player.get_tower(Vector2i(x, y))
+			if tower != null and tower.tower_type == tower_type:
+				return true
+	return false
 
 
 func _is_valid_player_id(player_id: int) -> bool:

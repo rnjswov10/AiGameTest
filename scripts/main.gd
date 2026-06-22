@@ -27,6 +27,17 @@ func _handle_mouse_input(event: InputEventMouseButton) -> void:
 	if not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
 		return
 
+	var relic_action := board_view.get_relic_action_at_position(event.position)
+	if not relic_action.is_empty():
+		var action_name: String = relic_action["action"]
+		var player_id: int = relic_action["player_id"]
+		if action_name == "choose":
+			match_controller.choose_relic(player_id, relic_action["index"])
+		elif action_name == "reroll":
+			match_controller.reroll_relics(player_id)
+		get_viewport().set_input_as_handled()
+		return
+
 	var hit_result := board_view.get_cell_at_position(event.position)
 	if hit_result.is_empty():
 		return
@@ -48,12 +59,16 @@ func _handle_key_input(event: InputEventKey) -> void:
 			match_controller.merge_selected_tower(0)
 		KEY_E:
 			match_controller.send_attack_wave(0)
+		KEY_A:
+			match_controller.summon_challenge_boss(0)
 		KEY_I:
 			match_controller.summon_tower(1)
 		KEY_O:
 			match_controller.merge_selected_tower(1)
 		KEY_P:
 			match_controller.send_attack_wave(1)
+		KEY_J:
+			match_controller.summon_challenge_boss(1)
 		KEY_R:
 			match_controller.start_match()
 		_:

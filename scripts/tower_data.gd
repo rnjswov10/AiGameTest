@@ -15,6 +15,8 @@ const MAX_LEVEL := 5
 var tower_type: int = TowerType.FIRE
 var level: int = 1
 var cooldown: float = 0.0
+var last_target_instance_id: int = 0
+var repeat_target_hits: int = 0
 
 
 func _init(initial_type: int = TowerType.FIRE, initial_level: int = 1) -> void:

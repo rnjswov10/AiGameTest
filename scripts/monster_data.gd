@@ -8,6 +8,8 @@ enum MonsterType {
 	FROST,
 	BLINK,
 	HEXED,
+	CHALLENGE_BOSS,
+	EVENT_BOSS,
 }
 
 var monster_type: int = MonsterType.BASIC
@@ -23,7 +25,14 @@ var poison_timer: float = 0.0
 var poison_damage_per_second: float = 0.0
 var slow_timer: float = 0.0
 var slow_multiplier: float = 1.0
+var freeze_timer: float = 0.0
 var blink_timer: float = 2.2
+var was_poisoned: bool = false
+var was_frozen: bool = false
+var last_hit_tower_type: int = -1
+var lightning_hit_count: int = 0
+var boss_time_limit: float = 0.0
+var boss_elapsed_time: float = 0.0
 
 
 func _init(initial_type: int = MonsterType.BASIC, wave_level: int = 1, offset: float = 0.0) -> void:
@@ -67,6 +76,20 @@ func _apply_stats(wave_level: int) -> void:
 			speed = 29.0
 			reward_gold = 12
 			reward_gauge = 13.0
+		MonsterType.CHALLENGE_BOSS:
+			max_hp = 220.0 * wave_scale
+			speed = 13.0
+			reward_gold = 90
+			reward_gauge = 55.0
+			damage_to_base = 3
+			boss_time_limit = 28.0
+		MonsterType.EVENT_BOSS:
+			max_hp = 360.0 * wave_scale
+			speed = 11.0
+			reward_gold = 130
+			reward_gauge = 75.0
+			damage_to_base = 5
+			boss_time_limit = 0.0
 
 	hp = max_hp
 
@@ -81,8 +104,14 @@ func update_effects(delta: float) -> void:
 		if slow_timer <= 0.0:
 			slow_multiplier = 1.0
 
+	if freeze_timer > 0.0:
+		freeze_timer = maxf(0.0, freeze_timer - delta)
+
 
 func advance(delta: float) -> void:
+	if freeze_timer > 0.0:
+		return
+
 	var speed_multiplier := slow_multiplier
 	progress += speed * speed_multiplier * delta
 
@@ -98,6 +127,7 @@ func take_damage(amount: float) -> void:
 
 
 func add_poison(duration: float, damage_per_second: float) -> void:
+	was_poisoned = true
 	poison_timer = maxf(poison_timer, duration)
 	poison_damage_per_second = maxf(poison_damage_per_second, damage_per_second)
 
@@ -105,6 +135,11 @@ func add_poison(duration: float, damage_per_second: float) -> void:
 func add_slow(duration: float, multiplier: float) -> void:
 	slow_timer = maxf(slow_timer, duration)
 	slow_multiplier = minf(slow_multiplier, multiplier)
+
+
+func add_freeze(duration: float) -> void:
+	was_frozen = true
+	freeze_timer = maxf(freeze_timer, duration)
 
 
 func is_dead() -> bool:
@@ -125,6 +160,10 @@ static func get_color(value: int) -> Color:
 			return Color(1.00, 0.88, 0.18)
 		MonsterType.HEXED:
 			return Color(0.72, 0.38, 1.00)
+		MonsterType.CHALLENGE_BOSS:
+			return Color(1.00, 0.43, 0.16)
+		MonsterType.EVENT_BOSS:
+			return Color(1.00, 0.12, 0.32)
 		_:
 			return Color.WHITE
 
@@ -143,5 +182,9 @@ static func get_display_name(value: int) -> String:
 			return "Blink"
 		MonsterType.HEXED:
 			return "Hex"
+		MonsterType.CHALLENGE_BOSS:
+			return "Boss"
+		MonsterType.EVENT_BOSS:
+			return "Event Boss"
 		_:
 			return "Unknown"

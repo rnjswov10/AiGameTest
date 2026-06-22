@@ -11,9 +11,16 @@ const LEFT_PATH_X := 430.0
 const RIGHT_PATH_X := 850.0
 const PATH_TOP := 160.0
 const PATH_BOTTOM := 480.0
+const RELIC_CARD_SIZE := Vector2(150.0, 76.0)
+const RELIC_CARD_GAP := 12.0
+const LEFT_RELIC_ORIGIN := Vector2(50.0, 520.0)
+const RIGHT_RELIC_ORIGIN := Vector2(760.0, 520.0)
+const REROLL_SIZE := Vector2(474.0, 32.0)
 
 var match_controller: MatchController
 var tower_labels: Dictionary = {}
+var relic_labels: Dictionary = {}
+var reroll_labels: Dictionary = {}
 var left_status_label: Label
 var right_status_label: Label
 var center_status_label: Label
@@ -24,6 +31,7 @@ var winner_label: Label
 func _ready() -> void:
 	_create_status_labels()
 	_create_tower_labels()
+	_create_relic_labels()
 
 
 func set_match_controller(controller: MatchController) -> void:
@@ -63,6 +71,36 @@ func get_cell_at_position(screen_position: Vector2) -> Array:
 	return []
 
 
+func get_relic_action_at_position(screen_position: Vector2) -> Dictionary:
+	if match_controller == null:
+		return {}
+	if match_controller.phase != MatchController.MatchPhase.RELIC_SELECT:
+		return {}
+
+	for player_id in range(2):
+		var player: PlayerState = match_controller.players[player_id]
+		if player.relic_offer == null or player.relic_offer.selected:
+			continue
+
+		for option_index in range(player.relic_offer.options.size()):
+			var card_rect := _get_relic_card_rect(player_id, option_index)
+			if card_rect.has_point(screen_position):
+				return {
+					"action": "choose",
+					"player_id": player_id,
+					"index": option_index,
+				}
+
+		var reroll_rect := _get_reroll_rect(player_id)
+		if reroll_rect.has_point(screen_position):
+			return {
+				"action": "reroll",
+				"player_id": player_id,
+			}
+
+	return {}
+
+
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, Vector2(1280.0, 720.0)), Color(0.07, 0.08, 0.10), true)
 	draw_line(Vector2(640.0, 92.0), Vector2(640.0, 650.0), Color(0.18, 0.20, 0.24), 2.0)
@@ -73,12 +111,16 @@ func _draw() -> void:
 	_draw_player_area(match_controller.players[0], 0)
 	_draw_player_area(match_controller.players[1], 1)
 
+	if match_controller.phase == MatchController.MatchPhase.RELIC_SELECT:
+		_draw_relic_select_area(match_controller.players[0], 0)
+		_draw_relic_select_area(match_controller.players[1], 1)
+
 
 func _create_status_labels() -> void:
 	left_status_label = _make_label(Vector2(48.0, 30.0), Vector2(490.0, 56.0), 22, HORIZONTAL_ALIGNMENT_LEFT)
 	right_status_label = _make_label(Vector2(742.0, 30.0), Vector2(490.0, 56.0), 22, HORIZONTAL_ALIGNMENT_RIGHT)
 	center_status_label = _make_label(Vector2(440.0, 94.0), Vector2(400.0, 48.0), 18, HORIZONTAL_ALIGNMENT_CENTER)
-	info_label = _make_label(Vector2(44.0, 626.0), Vector2(1192.0, 54.0), 18, HORIZONTAL_ALIGNMENT_CENTER)
+	info_label = _make_label(Vector2(44.0, 664.0), Vector2(1192.0, 42.0), 16, HORIZONTAL_ALIGNMENT_CENTER)
 	winner_label = _make_label(Vector2(390.0, 274.0), Vector2(500.0, 86.0), 42, HORIZONTAL_ALIGNMENT_CENTER)
 	winner_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.28))
 
@@ -95,6 +137,22 @@ func _create_tower_labels() -> void:
 				label.add_theme_constant_override("shadow_offset_x", 1)
 				label.add_theme_constant_override("shadow_offset_y", 1)
 				tower_labels[_label_key(player_id, cell)] = label
+
+
+func _create_relic_labels() -> void:
+	for player_id in range(2):
+		for option_index in range(3):
+			var card_rect := _get_relic_card_rect(player_id, option_index)
+			var label := _make_label(card_rect.position + Vector2(8.0, 5.0), card_rect.size - Vector2(16.0, 10.0), 10, HORIZONTAL_ALIGNMENT_LEFT)
+			label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			label.visible = false
+			relic_labels[_relic_label_key(player_id, option_index)] = label
+
+		var reroll_rect := _get_reroll_rect(player_id)
+		var reroll_label := _make_label(reroll_rect.position, reroll_rect.size, 13, HORIZONTAL_ALIGNMENT_CENTER)
+		reroll_label.visible = false
+		reroll_labels[player_id] = reroll_label
 
 
 func _make_label(label_position: Vector2, label_size: Vector2, font_size: int, alignment: int) -> Label:
@@ -120,6 +178,7 @@ func _update_labels() -> void:
 	center_status_label.text = _get_center_status_text()
 	info_label.text = _get_info_text(player_a, player_b)
 	winner_label.text = match_controller.winner_text if match_controller.game_over else ""
+	_update_relic_labels()
 
 	for player_id in range(2):
 		var player: PlayerState = match_controller.players[player_id]
@@ -134,12 +193,51 @@ func _update_labels() -> void:
 					label.text = "Lv%d" % tower.level
 
 
+func _update_relic_labels() -> void:
+	var should_show := match_controller.phase == MatchController.MatchPhase.RELIC_SELECT
+
+	for player_id in range(2):
+		var player: PlayerState = match_controller.players[player_id]
+		for option_index in range(3):
+			var label: Label = relic_labels[_relic_label_key(player_id, option_index)]
+			label.visible = should_show
+			label.text = ""
+
+			if not should_show:
+				continue
+			if player.relic_offer == null:
+				continue
+			if option_index >= player.relic_offer.options.size():
+				continue
+
+			var relic: RelicData = player.relic_offer.options[option_index]
+			label.text = "%s\n%s\n%s" % [
+				relic.relic_name,
+				relic.description,
+				RelicData.get_rarity_name(relic.rarity),
+			]
+
+		var reroll_label: Label = reroll_labels[player_id]
+		reroll_label.visible = should_show
+		if not should_show:
+			reroll_label.text = ""
+		elif player.relic_offer == null:
+			reroll_label.text = ""
+		elif player.relic_offer.selected:
+			reroll_label.text = "Selected: %s" % player.relic_offer.selected_relic.relic_name
+		else:
+			var cost := match_controller.get_reroll_cost(player)
+			var free_chance := int(round(player.get_free_reroll_chance() * 100.0))
+			reroll_label.text = "Reroll %d Gold | %d%% free from Luck" % [cost, free_chance]
+
+
 func _get_player_status_text(player: PlayerState) -> String:
-	return "%s  HP %d  Gold %d  Gauge %d%%" % [
+	return "%s  HP %d  Gold %d  Gauge %d%%  Relics %d" % [
 		player.display_name,
 		maxi(player.hp, 0),
 		player.gold,
 		int(round(player.attack_gauge)),
+		player.relics.size(),
 	]
 
 
@@ -147,10 +245,15 @@ func _get_center_status_text() -> String:
 	var seconds := int(floor(match_controller.match_time))
 	var minutes := int(seconds / 60)
 	var remaining_seconds := seconds % 60
-	return "%02d:%02d   Wave %d   R: restart" % [
+	var stage_seconds := int(ceil(match_controller.stage_timer))
+	var next_boss_stage := match_controller.get_next_event_boss_stage()
+	return "%02d:%02d   Stage %d   %s   %ds   Event Boss %d" % [
 		minutes,
 		remaining_seconds,
-		match_controller.wave_number,
+		match_controller.stage_number,
+		match_controller.get_phase_name(),
+		maxi(0, stage_seconds),
+		next_boss_stage,
 	]
 
 
@@ -164,7 +267,10 @@ func _get_info_text(player_a: PlayerState, player_b: PlayerState) -> String:
 	if player_b.message != "":
 		message_text = "%s | %s" % [message_text, player_b.message]
 
-	return "A: click left board, Q summon, W merge, E attack | B: click right board, I summon, O merge, P attack | %s" % message_text
+	if match_controller.phase == MatchController.MatchPhase.RELIC_SELECT:
+		return "Choose one relic each. Click a card or reroll. | %s" % message_text
+
+	return "A: Q summon, W merge, E attack, A boss | B: I summon, O merge, P attack, J boss | R restart | %s" % message_text
 
 
 func _draw_player_area(player: PlayerState, player_id: int) -> void:
@@ -222,8 +328,33 @@ func _draw_monsters(player: PlayerState, player_id: int) -> void:
 		var radius := 12.0
 		if monster.monster_type == MonsterData.MonsterType.ARMORED:
 			radius = 15.0
+		elif monster.monster_type == MonsterData.MonsterType.CHALLENGE_BOSS:
+			radius = 22.0
+		elif monster.monster_type == MonsterData.MonsterType.EVENT_BOSS:
+			radius = 26.0
 		draw_circle(monster_position, radius, MonsterData.get_color(monster.monster_type))
 		draw_arc(monster_position, radius + 2.0, 0.0, TAU, 24, Color(0.05, 0.06, 0.08), 2.0)
+
+
+func _draw_relic_select_area(player: PlayerState, player_id: int) -> void:
+	if player.relic_offer == null:
+		return
+
+	for option_index in range(player.relic_offer.options.size()):
+		var relic: RelicData = player.relic_offer.options[option_index]
+		var card_rect := _get_relic_card_rect(player_id, option_index)
+		var fill_color := Color(0.10, 0.11, 0.14)
+		if player.relic_offer.selected:
+			fill_color = Color(0.08, 0.09, 0.11)
+		draw_rect(card_rect, fill_color, true)
+		draw_rect(card_rect, RelicData.get_rarity_color(relic.rarity), false, 2.0)
+
+	var reroll_rect := _get_reroll_rect(player_id)
+	var reroll_color := Color(0.17, 0.19, 0.24)
+	if player.relic_offer.selected:
+		reroll_color = Color(0.10, 0.12, 0.15)
+	draw_rect(reroll_rect, reroll_color, true)
+	draw_rect(reroll_rect, Color(0.42, 0.46, 0.54), false, 1.0)
 
 
 func _draw_build_profile(player: PlayerState, player_id: int) -> void:
@@ -267,3 +398,24 @@ func _get_monster_position(player_id: int, monster: MonsterData) -> Vector2:
 
 func _label_key(player_id: int, cell: Vector2i) -> String:
 	return "%d_%d_%d" % [player_id, cell.x, cell.y]
+
+
+func _relic_label_key(player_id: int, option_index: int) -> String:
+	return "%d_relic_%d" % [player_id, option_index]
+
+
+func _get_relic_origin(player_id: int) -> Vector2:
+	if player_id == 0:
+		return LEFT_RELIC_ORIGIN
+	return RIGHT_RELIC_ORIGIN
+
+
+func _get_relic_card_rect(player_id: int, option_index: int) -> Rect2:
+	var origin := _get_relic_origin(player_id)
+	var x := origin.x + float(option_index) * (RELIC_CARD_SIZE.x + RELIC_CARD_GAP)
+	return Rect2(Vector2(x, origin.y), RELIC_CARD_SIZE)
+
+
+func _get_reroll_rect(player_id: int) -> Rect2:
+	var origin := _get_relic_origin(player_id)
+	return Rect2(origin + Vector2(0.0, RELIC_CARD_SIZE.y + 8.0), REROLL_SIZE)
