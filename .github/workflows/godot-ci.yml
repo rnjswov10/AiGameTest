@@ -1,0 +1,122 @@
+name: Godot CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: godot-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7-stable
+
+jobs:
+  validate:
+    name: Validate Godot project
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          download_url="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          curl --fail --location --retry 3 --output godot.zip "${download_url}"
+          python3 -m zipfile -e godot.zip godot-bin
+
+          godot_bin="$(find godot-bin -maxdepth 1 -type f -name 'Godot*_linux.x86_64' | head -n 1)"
+          if [ -z "${godot_bin}" ]; then
+            echo "Godot binary was not found in the downloaded archive."
+            exit 1
+          fi
+
+          chmod +x "${godot_bin}"
+          sudo mv "${godot_bin}" /usr/local/bin/godot
+          godot --version
+
+      - name: Import project
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --import
+
+      - name: Validate GDScript files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ci_script="${RUNNER_TEMP}/validate_gdscript.gd"
+          cat > "${ci_script}" <<'GDSCRIPT'
+          extends SceneTree
+
+          var had_error: bool = false
+
+
+          func _init() -> void:
+          	_validate_directory("res://")
+
+          	if had_error:
+          		quit(1)
+          		return
+
+          	print("GDScript validation completed.")
+          	quit(0)
+
+
+          func _validate_directory(path: String) -> void:
+          	var dir := DirAccess.open(path)
+          	if dir == null:
+          		push_error("Cannot open directory: " + path)
+          		had_error = true
+          		return
+
+          	dir.list_dir_begin()
+          	var file_name := dir.get_next()
+          	while file_name != "":
+          		if file_name.begins_with("."):
+          			file_name = dir.get_next()
+          			continue
+
+          		var child_path := path.path_join(file_name)
+          		if dir.current_is_dir():
+          			_validate_directory(child_path)
+          		elif child_path.ends_with(".gd"):
+          			_validate_script(child_path)
+
+          		file_name = dir.get_next()
+          	dir.list_dir_end()
+
+
+          func _validate_script(path: String) -> void:
+          	var script := load(path)
+          	if script == null:
+          		push_error("Failed to load script: " + path)
+          		had_error = true
+          		return
+
+          	print("Loaded " + path)
+          GDSCRIPT
+
+          godot --headless --path . --script "${ci_script}"
+
+      - name: Smoke test main scene
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --quit-after 3

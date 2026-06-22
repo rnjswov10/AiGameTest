@@ -1,6 +1,9 @@
 class_name BoardView
 extends Node2D
 
+signal player_action_requested(action_name: String, player_id: int)
+signal network_action_requested(action_name: String)
+
 const CELL_SIZE := 52.0
 const CELL_GAP := 8.0
 const CELL_STEP := CELL_SIZE + CELL_GAP
@@ -16,11 +19,20 @@ const RELIC_CARD_GAP := 12.0
 const LEFT_RELIC_ORIGIN := Vector2(50.0, 500.0)
 const RIGHT_RELIC_ORIGIN := Vector2(760.0, 500.0)
 const REROLL_SIZE := Vector2(474.0, 32.0)
+const ACTION_BUTTON_SIZE := Vector2(84.0, 28.0)
+const ACTION_BUTTON_GAP := 8.0
+const LEFT_ACTION_ORIGIN := Vector2(58.0, 128.0)
+const RIGHT_ACTION_ORIGIN := Vector2(852.0, 128.0)
+const NETWORK_BUTTON_SIZE := Vector2(176.0, 28.0)
+const NETWORK_BUTTON_GAP := 6.0
+const NETWORK_BUTTON_ORIGIN := Vector2(552.0, 154.0)
 
 var match_controller: MatchController
 var tower_labels: Dictionary = {}
 var relic_labels: Dictionary = {}
 var reroll_labels: Dictionary = {}
+var action_buttons: Dictionary = {}
+var network_buttons: Dictionary = {}
 var left_status_label: Label
 var right_status_label: Label
 var center_status_label: Label
@@ -32,6 +44,7 @@ func _ready() -> void:
 	_create_status_labels()
 	_create_tower_labels()
 	_create_relic_labels()
+	_create_control_buttons()
 
 
 func set_match_controller(controller: MatchController) -> void:
@@ -167,6 +180,99 @@ func _make_label(label_position: Vector2, label_size: Vector2, font_size: int, a
 	return label
 
 
+func _create_control_buttons() -> void:
+	_create_player_action_buttons(0)
+	_create_player_action_buttons(1)
+	_create_network_buttons()
+
+
+func _create_player_action_buttons(player_id: int) -> void:
+	var actions := [
+		["summon", "Summon"],
+		["merge", "Merge"],
+		["attack", "Attack"],
+		["boss", "Boss"],
+	]
+	var origin := LEFT_ACTION_ORIGIN
+	if player_id == 1:
+		origin = RIGHT_ACTION_ORIGIN
+
+	for index in range(actions.size()):
+		var action_name: String = actions[index][0]
+		var label_text: String = actions[index][1]
+		var button_position := origin + Vector2(float(index) * (ACTION_BUTTON_SIZE.x + ACTION_BUTTON_GAP), 0.0)
+		var button := _make_button(button_position, ACTION_BUTTON_SIZE, label_text)
+		button.pressed.connect(_on_player_action_button_pressed.bind(action_name, player_id))
+		action_buttons[_action_button_key(player_id, action_name)] = button
+
+
+func _create_network_buttons() -> void:
+	var actions := [
+		["host", "Host"],
+		["find", "Find"],
+		["join", "Join Code"],
+		["copy", "Copy Code"],
+		["leave", "Leave"],
+		["restart", "Restart"],
+	]
+
+	for index in range(actions.size()):
+		var action_name: String = actions[index][0]
+		var label_text: String = actions[index][1]
+		var button_position := NETWORK_BUTTON_ORIGIN + Vector2(0.0, float(index) * (NETWORK_BUTTON_SIZE.y + NETWORK_BUTTON_GAP))
+		var button := _make_button(button_position, NETWORK_BUTTON_SIZE, label_text)
+		button.pressed.connect(_on_network_button_pressed.bind(action_name))
+		network_buttons[action_name] = button
+
+
+func _make_button(button_position: Vector2, button_size: Vector2, label_text: String) -> Button:
+	var button := Button.new()
+	button.position = button_position
+	button.size = button_size
+	button.text = label_text
+	button.focus_mode = Control.FOCUS_NONE
+	button.add_theme_font_size_override("font_size", 12)
+	add_child(button)
+	return button
+
+
+func _update_control_buttons() -> void:
+	for player_id in range(2):
+		var enabled := _is_player_action_enabled(player_id)
+		for action_name in ["summon", "merge", "attack", "boss"]:
+			var button: Button = action_buttons[_action_button_key(player_id, action_name)]
+			button.disabled = not enabled
+
+	var online := match_controller.network_local_player_id >= 0
+	var is_client := match_controller.network_mode_name == "Steam Client"
+	network_buttons["host"].disabled = online
+	network_buttons["find"].disabled = online
+	network_buttons["join"].disabled = online
+	network_buttons["copy"].disabled = not online
+	network_buttons["leave"].disabled = not online
+	network_buttons["restart"].disabled = online and is_client
+
+
+func _is_player_action_enabled(player_id: int) -> bool:
+	if match_controller == null:
+		return false
+	if match_controller.game_over:
+		return false
+	if match_controller.phase == MatchController.MatchPhase.RELIC_SELECT:
+		return false
+	if match_controller.network_local_player_id >= 0 and match_controller.network_local_player_id != player_id:
+		return false
+	return true
+
+
+func _on_player_action_button_pressed(action_name: String, player_id: int) -> void:
+	player_action_requested.emit(action_name, player_id)
+
+
+func _on_network_button_pressed(action_name: String) -> void:
+	network_action_requested.emit(action_name)
+
+
 func _update_labels() -> void:
 	if match_controller == null or match_controller.players.size() < 2:
 		return
@@ -179,6 +285,7 @@ func _update_labels() -> void:
 	info_label.text = _get_info_text(player_a, player_b)
 	winner_label.text = match_controller.winner_text if match_controller.game_over else ""
 	_update_relic_labels()
+	_update_control_buttons()
 
 	for player_id in range(2):
 		var player: PlayerState = match_controller.players[player_id]
@@ -268,9 +375,25 @@ func _get_info_text(player_a: PlayerState, player_b: PlayerState) -> String:
 		message_text = "%s | %s" % [message_text, player_b.message]
 
 	if match_controller.phase == MatchController.MatchPhase.RELIC_SELECT:
-		return "Choose one relic each. Click a card or reroll. | %s" % message_text
+		return "Choose one relic each. Click a card or reroll. | %s | %s" % [
+			message_text,
+			match_controller.network_status_text,
+		]
 
-	return "A: Q summon, W merge, E attack, A boss | B: I summon, O merge, P attack, J boss | R restart | %s" % message_text
+	if match_controller.network_local_player_id >= 0:
+		var local_name := "Player A"
+		if match_controller.network_local_player_id == 1:
+			local_name = "Player B"
+		return "Online %s: Q summon, W merge, E attack, A boss | H host, L find, C copy, V join, Esc leave | %s | %s" % [
+			local_name,
+			message_text,
+			match_controller.network_status_text,
+		]
+
+	return "A: Q summon, W merge, E attack, A boss | B: I summon, O merge, P attack, J boss | H host, L find, C copy, V join | R restart | %s | %s" % [
+		message_text,
+		match_controller.network_status_text,
+	]
 
 
 func _draw_player_area(player: PlayerState, player_id: int) -> void:
@@ -398,6 +521,10 @@ func _get_monster_position(player_id: int, monster: MonsterData) -> Vector2:
 
 func _label_key(player_id: int, cell: Vector2i) -> String:
 	return "%d_%d_%d" % [player_id, cell.x, cell.y]
+
+
+func _action_button_key(player_id: int, action_name: String) -> String:
+	return "%d_%s" % [player_id, action_name]
 
 
 func _relic_label_key(player_id: int, option_index: int) -> String:

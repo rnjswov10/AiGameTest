@@ -8,6 +8,7 @@ exports/*
 builds/*
 !builds/.gitkeep
 tools/
+steam_appid.txt
 
 # OS/editor noise
 .DS_Store

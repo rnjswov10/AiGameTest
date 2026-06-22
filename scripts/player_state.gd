@@ -322,3 +322,174 @@ func add_curse_defense_stack() -> void:
 	if max_stacks <= 0:
 		return
 	curse_defense_stacks = mini(max_stacks, curse_defense_stacks + 1)
+
+
+func to_snapshot() -> Dictionary:
+	return {
+		"player_id": player_id,
+		"display_name": display_name,
+		"hp": hp,
+		"gold": gold,
+		"attack_gauge": attack_gauge,
+		"board": _board_to_snapshot(),
+		"monsters": _monsters_to_snapshot(),
+		"selected_cell_x": selected_cell.x,
+		"selected_cell_y": selected_cell.y,
+		"locked_cell_x": locked_cell.x,
+		"locked_cell_y": locked_cell.y,
+		"locked_timer": locked_timer,
+		"tower_slow_timer": tower_slow_timer,
+		"message": message,
+		"message_timer": message_timer,
+		"relic_ids": _relic_ids_to_snapshot(),
+		"relic_offer": _relic_offer_to_snapshot(),
+		"luck": luck,
+		"challenge_boss_used_this_stage": challenge_boss_used_this_stage,
+		"challenge_boss_instance_id": challenge_boss_instance_id,
+		"challenge_boss_timer": challenge_boss_timer,
+		"pending_boss_penalty_timer": pending_boss_penalty_timer,
+		"curse_defense_stacks": curse_defense_stacks,
+	}
+
+
+func apply_snapshot(data: Dictionary, library: RelicLibrary) -> void:
+	player_id = int(data.get("player_id", player_id))
+	display_name = str(data.get("display_name", display_name))
+	hp = int(data.get("hp", START_HP))
+	gold = int(data.get("gold", START_GOLD))
+	attack_gauge = float(data.get("attack_gauge", 0.0))
+	selected_cell = Vector2i(
+		int(data.get("selected_cell_x", -1)),
+		int(data.get("selected_cell_y", -1))
+	)
+	locked_cell = Vector2i(
+		int(data.get("locked_cell_x", -1)),
+		int(data.get("locked_cell_y", -1))
+	)
+	locked_timer = float(data.get("locked_timer", 0.0))
+	tower_slow_timer = float(data.get("tower_slow_timer", 0.0))
+	message = str(data.get("message", ""))
+	message_timer = float(data.get("message_timer", 0.0))
+	luck = int(data.get("luck", START_LUCK))
+	challenge_boss_used_this_stage = bool(data.get("challenge_boss_used_this_stage", false))
+	challenge_boss_instance_id = int(data.get("challenge_boss_instance_id", 0))
+	challenge_boss_timer = float(data.get("challenge_boss_timer", 0.0))
+	pending_boss_penalty_timer = float(data.get("pending_boss_penalty_timer", 0.0))
+	curse_defense_stacks = int(data.get("curse_defense_stacks", 0))
+	_apply_board_snapshot(data.get("board", []))
+	_apply_monsters_snapshot(data.get("monsters", []))
+	_apply_relics_snapshot(data.get("relic_ids", []), library)
+	_apply_relic_offer_snapshot(data.get("relic_offer", {}), library)
+
+
+func _board_to_snapshot() -> Array:
+	var board_snapshot: Array = []
+	for y in range(GRID_SIZE):
+		var row_snapshot: Array = []
+		for x in range(GRID_SIZE):
+			var tower: TowerData = board[y][x]
+			if tower == null:
+				row_snapshot.append({})
+			else:
+				row_snapshot.append(tower.to_snapshot())
+		board_snapshot.append(row_snapshot)
+	return board_snapshot
+
+
+func _monsters_to_snapshot() -> Array:
+	var monster_snapshot: Array = []
+	for monster in monsters:
+		monster_snapshot.append(monster.to_snapshot())
+	return monster_snapshot
+
+
+func _relic_ids_to_snapshot() -> Array:
+	var relic_ids: Array = []
+	for relic in relics:
+		relic_ids.append(relic.id)
+	return relic_ids
+
+
+func _relic_offer_to_snapshot() -> Dictionary:
+	if relic_offer == null:
+		return {}
+
+	var option_ids: Array = []
+	for relic in relic_offer.options:
+		option_ids.append(relic.id)
+
+	var selected_id := ""
+	if relic_offer.selected_relic != null:
+		selected_id = relic_offer.selected_relic.id
+
+	return {
+		"option_ids": option_ids,
+		"selected": relic_offer.selected,
+		"selected_relic_id": selected_id,
+		"reroll_count": relic_offer.reroll_count,
+		"last_reroll_was_free": relic_offer.last_reroll_was_free,
+	}
+
+
+func _apply_board_snapshot(board_snapshot: Variant) -> void:
+	_reset_board()
+	if not (board_snapshot is Array):
+		return
+
+	for y in range(mini(GRID_SIZE, board_snapshot.size())):
+		var row_snapshot: Variant = board_snapshot[y]
+		if not (row_snapshot is Array):
+			continue
+		for x in range(mini(GRID_SIZE, row_snapshot.size())):
+			var tower_snapshot: Variant = row_snapshot[x]
+			if not (tower_snapshot is Dictionary):
+				continue
+			if tower_snapshot.is_empty():
+				continue
+			board[y][x] = TowerData.from_snapshot(tower_snapshot)
+
+
+func _apply_monsters_snapshot(monster_snapshot: Variant) -> void:
+	monsters.clear()
+	if not (monster_snapshot is Array):
+		return
+
+	for monster_data in monster_snapshot:
+		if monster_data is Dictionary:
+			monsters.append(MonsterData.from_snapshot(monster_data))
+
+
+func _apply_relics_snapshot(relic_ids: Variant, library: RelicLibrary) -> void:
+	relics.clear()
+	if library == null or not (relic_ids is Array):
+		return
+
+	for relic_id in relic_ids:
+		var relic := library.get_relic_by_id(str(relic_id))
+		if relic != null:
+			relics.append(relic)
+
+
+func _apply_relic_offer_snapshot(offer_snapshot: Variant, library: RelicLibrary) -> void:
+	relic_offer = null
+	if library == null or not (offer_snapshot is Dictionary):
+		return
+	if offer_snapshot.is_empty():
+		return
+
+	var options: Array = []
+	var option_ids: Variant = offer_snapshot.get("option_ids", [])
+	if option_ids is Array:
+		for relic_id in option_ids:
+			var relic := library.get_relic_by_id(str(relic_id))
+			if relic != null:
+				options.append(relic)
+
+	relic_offer = RelicOffer.new(options)
+	relic_offer.selected = bool(offer_snapshot.get("selected", false))
+	relic_offer.reroll_count = int(offer_snapshot.get("reroll_count", 0))
+	relic_offer.last_reroll_was_free = bool(offer_snapshot.get("last_reroll_was_free", false))
+
+	var selected_relic_id := str(offer_snapshot.get("selected_relic_id", ""))
+	if selected_relic_id != "":
+		relic_offer.selected_relic = library.get_relic_by_id(selected_relic_id)

@@ -146,6 +146,66 @@ func is_dead() -> bool:
 	return hp <= 0.0
 
 
+func to_snapshot() -> Dictionary:
+	return {
+		"monster_type": monster_type,
+		"max_hp": max_hp,
+		"hp": hp,
+		"speed": speed,
+		"reward_gold": reward_gold,
+		"reward_gauge": reward_gauge,
+		"damage_to_base": damage_to_base,
+		"progress": progress,
+		"lane_offset": lane_offset,
+		"poison_timer": poison_timer,
+		"poison_damage_per_second": poison_damage_per_second,
+		"slow_timer": slow_timer,
+		"slow_multiplier": slow_multiplier,
+		"freeze_timer": freeze_timer,
+		"blink_timer": blink_timer,
+		"was_poisoned": was_poisoned,
+		"was_frozen": was_frozen,
+		"last_hit_tower_type": last_hit_tower_type,
+		"lightning_hit_count": lightning_hit_count,
+		"boss_time_limit": boss_time_limit,
+		"boss_elapsed_time": boss_elapsed_time,
+	}
+
+
+func apply_snapshot(data: Dictionary) -> void:
+	monster_type = int(data.get("monster_type", MonsterType.BASIC))
+	max_hp = float(data.get("max_hp", 40.0))
+	hp = float(data.get("hp", max_hp))
+	speed = float(data.get("speed", 35.0))
+	reward_gold = int(data.get("reward_gold", 8))
+	reward_gauge = float(data.get("reward_gauge", 8.0))
+	damage_to_base = int(data.get("damage_to_base", 1))
+	progress = float(data.get("progress", 0.0))
+	lane_offset = float(data.get("lane_offset", 0.0))
+	poison_timer = float(data.get("poison_timer", 0.0))
+	poison_damage_per_second = float(data.get("poison_damage_per_second", 0.0))
+	slow_timer = float(data.get("slow_timer", 0.0))
+	slow_multiplier = float(data.get("slow_multiplier", 1.0))
+	freeze_timer = float(data.get("freeze_timer", 0.0))
+	blink_timer = float(data.get("blink_timer", 2.2))
+	was_poisoned = bool(data.get("was_poisoned", false))
+	was_frozen = bool(data.get("was_frozen", false))
+	last_hit_tower_type = int(data.get("last_hit_tower_type", -1))
+	lightning_hit_count = int(data.get("lightning_hit_count", 0))
+	boss_time_limit = float(data.get("boss_time_limit", 0.0))
+	boss_elapsed_time = float(data.get("boss_elapsed_time", 0.0))
+
+
+static func from_snapshot(data: Dictionary) -> MonsterData:
+	var monster := MonsterData.new(
+		int(data.get("monster_type", MonsterType.BASIC)),
+		1,
+		float(data.get("lane_offset", 0.0))
+	)
+	monster.apply_snapshot(data)
+	return monster
+
+
 static func get_color(value: int) -> Color:
 	match value:
 		MonsterType.BASIC:

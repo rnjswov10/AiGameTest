@@ -70,6 +70,20 @@ function Initialize-PortableGodot {
     }
 }
 
+function Copy-SteamAppIdIfPresent {
+    param(
+        [string]$RepoRoot,
+        [string]$OutputDirectory
+    )
+
+    $appIdSource = Join-Path $RepoRoot "steam_appid.txt"
+    if (-not (Test-Path $appIdSource)) {
+        return
+    }
+
+    Copy-Item -LiteralPath $appIdSource -Destination (Join-Path $OutputDirectory "steam_appid.txt") -Force
+}
+
 $repoRoot = Get-RepoRoot
 $godot = Get-GodotExecutable -CandidatePath $GodotPath
 $resolvedOutput = Join-Path $repoRoot $OutputPath
@@ -100,5 +114,7 @@ if ($LASTEXITCODE -ne 0) {
 if (-not (Test-Path $resolvedOutput)) {
     throw "Godot export completed but output file was not created: $resolvedOutput"
 }
+
+Copy-SteamAppIdIfPresent -RepoRoot $repoRoot -OutputDirectory $outputDir
 
 Write-Host "Export complete: $resolvedOutput"

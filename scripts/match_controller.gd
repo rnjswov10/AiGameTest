@@ -28,6 +28,10 @@ var spawn_timer: float = 0.0
 var game_over: bool = false
 var winner_text: String = ""
 var last_event_text: String = ""
+var simulation_active: bool = true
+var network_status_text: String = "Local mode"
+var network_mode_name: String = "Local"
+var network_local_player_id: int = -1
 
 
 func start_match(initial_seed: int = 0) -> void:
@@ -47,10 +51,14 @@ func start_match(initial_seed: int = 0) -> void:
 	game_over = false
 	winner_text = ""
 	last_event_text = "Match seed %d" % match_seed
+	simulation_active = true
 	_start_stage()
 
 
 func _process(delta: float) -> void:
+	if not simulation_active:
+		return
+
 	if game_over:
 		return
 
@@ -89,6 +97,35 @@ func summon_tower(player_id: int) -> void:
 	if not _is_valid_player_id(player_id):
 		return
 	players[player_id].summon_random_tower(rng)
+
+
+func apply_player_command(command: Dictionary) -> void:
+	var action := str(command.get("action", ""))
+	var player_id := int(command.get("player_id", -1))
+
+	match action:
+		"select_cell":
+			var cell := Vector2i(
+				int(command.get("x", -1)),
+				int(command.get("y", -1))
+			)
+			select_cell(player_id, cell)
+		"summon":
+			summon_tower(player_id)
+		"merge":
+			merge_selected_tower(player_id)
+		"attack":
+			send_attack_wave(player_id)
+		"boss":
+			summon_challenge_boss(player_id)
+		"choose_relic":
+			choose_relic(player_id, int(command.get("index", -1)))
+		"reroll_relics":
+			reroll_relics(player_id)
+		"restart":
+			start_match(int(command.get("seed", 0)))
+		_:
+			return
 
 
 func merge_selected_tower(player_id: int) -> void:
@@ -247,6 +284,54 @@ func get_phase_name() -> String:
 
 func get_next_event_boss_stage() -> int:
 	return int(ceil(float(stage_number) / 10.0)) * 10
+
+
+func create_network_snapshot() -> Dictionary:
+	var player_snapshots: Array = []
+	for player in players:
+		player_snapshots.append(player.to_snapshot())
+
+	return {
+		"match_seed": match_seed,
+		"match_time": match_time,
+		"stage_number": stage_number,
+		"wave_number": wave_number,
+		"phase": phase,
+		"stage_timer": stage_timer,
+		"spawn_timer": spawn_timer,
+		"game_over": game_over,
+		"winner_text": winner_text,
+		"last_event_text": last_event_text,
+		"players": player_snapshots,
+	}
+
+
+func apply_network_snapshot(snapshot: Dictionary) -> void:
+	match_seed = int(snapshot.get("match_seed", match_seed))
+	match_time = float(snapshot.get("match_time", 0.0))
+	stage_number = int(snapshot.get("stage_number", 1))
+	wave_number = int(snapshot.get("wave_number", stage_number))
+	phase = int(snapshot.get("phase", MatchPhase.COMBAT))
+	stage_timer = float(snapshot.get("stage_timer", 0.0))
+	spawn_timer = float(snapshot.get("spawn_timer", 0.0))
+	game_over = bool(snapshot.get("game_over", false))
+	winner_text = str(snapshot.get("winner_text", ""))
+	last_event_text = str(snapshot.get("last_event_text", ""))
+
+	var player_snapshots: Variant = snapshot.get("players", [])
+	if player_snapshots is Array:
+		_ensure_player_count(player_snapshots.size())
+		for index in range(mini(players.size(), player_snapshots.size())):
+			if player_snapshots[index] is Dictionary:
+				players[index].apply_snapshot(player_snapshots[index], relic_library)
+
+	simulation_active = false
+
+
+func set_network_view(mode_name: String, local_player_id: int, status_text: String) -> void:
+	network_mode_name = mode_name
+	network_local_player_id = local_player_id
+	network_status_text = status_text
 
 
 func _start_stage() -> void:
@@ -763,6 +848,12 @@ func _player_has_tower_type(player: PlayerState, tower_type: int) -> bool:
 			if tower != null and tower.tower_type == tower_type:
 				return true
 	return false
+
+
+func _ensure_player_count(count: int) -> void:
+	while players.size() < count:
+		var player_id := players.size()
+		players.append(PlayerState.new(player_id, "Player %d" % (player_id + 1)))
 
 
 func _is_valid_player_id(player_id: int) -> bool:

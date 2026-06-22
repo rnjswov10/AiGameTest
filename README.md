@@ -32,7 +32,7 @@ Open this folder in Godot and run `res://scenes/main.tscn`.
 
 ## Current MVP
 
-The current prototype is a local 1v1 PvP roguelite tower-defense simulation with staged combat and relic drafting.
+The current prototype is a local 1v1 PvP roguelite tower-defense simulation with staged combat, relic drafting, and an optional Steam P2P transport layer.
 
 - Player A uses the left board.
 - Player B uses the right board.
@@ -42,10 +42,15 @@ The current prototype is a local 1v1 PvP roguelite tower-defense simulation with
 - Player A: `A` summons a challenge boss on the left field.
 - Player B: `J` summons a challenge boss on the right field.
 - `R` restarts the match.
+- Steam lobby controls are available as buttons: `Host`, `Find`, `Join Code`, `Copy Code`, `Leave`, and `Restart`.
+- Keyboard shortcuts are still available: `H` host, `L` find lobby, `C` copy lobby id, `V` join clipboard lobby id, `Esc` leave lobby.
+- In Steam online mode, host is Player A and client is Player B. Each side can use the player action buttons or `Q`, `W`, `E`, and `A` for their own board.
 
 Towers are colored squares with `Lv1`, `Lv2`, and higher labels. Monsters are colored circles. Your dominant tower color determines the monster type sent to the opponent when using the attack gauge.
 
 Each stage runs combat, cleanup, and then a relic selection phase. Both players choose one of three relics before the next stage starts. Rerolls cost match gold, and Luck can make a reroll free without directly increasing combat stats.
+
+See `docs/steam_networking.md` for GodotSteam setup and online test flow.
 
 ## Collaboration
 

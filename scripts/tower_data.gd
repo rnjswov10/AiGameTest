@@ -80,6 +80,27 @@ func get_gauge_bonus() -> float:
 	return 0.0
 
 
+func to_snapshot() -> Dictionary:
+	return {
+		"tower_type": tower_type,
+		"level": level,
+		"cooldown": cooldown,
+		"last_target_instance_id": last_target_instance_id,
+		"repeat_target_hits": repeat_target_hits,
+	}
+
+
+static func from_snapshot(data: Dictionary) -> TowerData:
+	var tower := TowerData.new(
+		int(data.get("tower_type", TowerType.FIRE)),
+		int(data.get("level", 1))
+	)
+	tower.cooldown = float(data.get("cooldown", 0.0))
+	tower.last_target_instance_id = int(data.get("last_target_instance_id", 0))
+	tower.repeat_target_hits = int(data.get("repeat_target_hits", 0))
+	return tower
+
+
 static func get_color(value: int) -> Color:
 	match value:
 		TowerType.FIRE:

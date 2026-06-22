@@ -26,6 +26,13 @@ func create_offer(rng: RandomNumberGenerator, player: PlayerState, stage_number:
 	return offer
 
 
+func get_relic_by_id(relic_id: String) -> RelicData:
+	for relic in relics:
+		if relic.id == relic_id:
+			return relic
+	return null
+
+
 func _build_catalog() -> void:
 	relics.clear()
 
