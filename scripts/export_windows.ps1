@@ -37,7 +37,11 @@ function Get-GodotExecutable {
             continue
         }
 
-        $matches = Get-ChildItem -Path $root -Recurse -Filter "Godot*.exe" -ErrorAction SilentlyContinue
+        $matches = @(Get-ChildItem -Path $root -Recurse -Filter "Godot*.exe" -ErrorAction SilentlyContinue)
+        $consoleMatches = @($matches | Where-Object { $_.Name -like "*console.exe" })
+        foreach ($match in $consoleMatches) {
+            return $match.FullName
+        }
         foreach ($match in $matches) {
             return $match.FullName
         }
@@ -46,10 +50,32 @@ function Get-GodotExecutable {
     throw "Godot executable not found. Install Godot or pass -GodotPath / set GODOT_BIN."
 }
 
+function Initialize-PortableGodot {
+    param(
+        [string]$GodotExecutable,
+        [string]$RepoRoot
+    )
+
+    $godotDir = Split-Path -Parent $GodotExecutable
+    $selfContainedMarker = Join-Path $godotDir "_sc_"
+    if (-not (Test-Path $selfContainedMarker)) {
+        New-Item -ItemType File -Force -Path $selfContainedMarker | Out-Null
+    }
+
+    $templateSource = Join-Path $RepoRoot "tools\godot\templates\templates"
+    $templateTarget = Join-Path $godotDir "editor_data\export_templates\4.7.stable"
+    if ((Test-Path $templateSource) -and (-not (Test-Path (Join-Path $templateTarget "windows_release_x86_64.exe")))) {
+        New-Item -ItemType Directory -Force -Path $templateTarget | Out-Null
+        Copy-Item -Path (Join-Path $templateSource "*") -Destination $templateTarget -Recurse -Force
+    }
+}
+
 $repoRoot = Get-RepoRoot
 $godot = Get-GodotExecutable -CandidatePath $GodotPath
 $resolvedOutput = Join-Path $repoRoot $OutputPath
 $outputDir = Split-Path -Parent $resolvedOutput
+
+Initialize-PortableGodot -GodotExecutable $godot -RepoRoot $repoRoot
 
 if (-not (Test-Path (Join-Path $repoRoot "project.godot"))) {
     throw "project.godot was not found at $repoRoot"
