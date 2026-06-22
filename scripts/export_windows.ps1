@@ -18,7 +18,7 @@ function Get-GodotExecutable {
         return (Resolve-Path $CandidatePath).Path
     }
 
-    $commandNames = @("godot4.7", "godot4", "godot")
+    $commandNames = @("godotsteam", "godot4.6", "godot4", "godot")
     foreach ($commandName in $commandNames) {
         $command = Get-Command $commandName -ErrorAction SilentlyContinue
         if ($command) {
@@ -27,6 +27,8 @@ function Get-GodotExecutable {
     }
 
     $searchRoots = @(
+        (Join-Path (Get-RepoRoot) "tools\godotsteam\editor"),
+        (Join-Path (Get-RepoRoot) "tools\godot\editor"),
         (Join-Path (Get-RepoRoot) "tools"),
         (Join-Path $env:LOCALAPPDATA "Programs\Godot"),
         (Join-Path $env:ProgramFiles "Godot")
@@ -37,8 +39,12 @@ function Get-GodotExecutable {
             continue
         }
 
-        $matches = @(Get-ChildItem -Path $root -Recurse -Filter "Godot*.exe" -ErrorAction SilentlyContinue)
+        $matches = @(Get-ChildItem -Path $root -Recurse -Include "Godot*.exe","godotsteam*.exe" -ErrorAction SilentlyContinue)
         $consoleMatches = @($matches | Where-Object { $_.Name -like "*console.exe" })
+        $steamConsoleMatches = @($consoleMatches | Where-Object { $_.Name -like "godotsteam*" })
+        foreach ($match in $steamConsoleMatches) {
+            return $match.FullName
+        }
         foreach ($match in $consoleMatches) {
             return $match.FullName
         }
@@ -62,6 +68,20 @@ function Initialize-PortableGodot {
         New-Item -ItemType File -Force -Path $selfContainedMarker | Out-Null
     }
 
+    $isGodotSteam = ((Split-Path -Leaf $GodotExecutable) -like "godotsteam*")
+    if ($isGodotSteam) {
+        $templateSource = Join-Path $RepoRoot "tools\godotsteam\templates\win64"
+        $templateTarget = Join-Path $godotDir "editor_data\export_templates\4.6.3.stable"
+        New-Item -ItemType Directory -Force -Path $templateTarget | Out-Null
+        if (Test-Path (Join-Path $templateSource "godotsteam.463.template.win64.exe")) {
+            Copy-Item -Path (Join-Path $templateSource "godotsteam.463.template.win64.exe") -Destination (Join-Path $templateTarget "windows_release_x86_64.exe") -Force
+            Copy-Item -Path (Join-Path $templateSource "godotsteam.463.debug.template.win64.exe") -Destination (Join-Path $templateTarget "windows_debug_x86_64.exe") -Force
+            Copy-Item -Path (Join-Path $templateSource "steam_api64.dll") -Destination (Join-Path $templateTarget "steam_api64.dll") -Force
+            "4.6.3.stable" | Set-Content -Path (Join-Path $templateTarget "version.txt") -NoNewline
+        }
+        return
+    }
+
     $templateSource = Join-Path $RepoRoot "tools\godot\templates\templates"
     $templateTarget = Join-Path $godotDir "editor_data\export_templates\4.7.stable"
     if ((Test-Path $templateSource) -and (-not (Test-Path (Join-Path $templateTarget "windows_release_x86_64.exe")))) {
@@ -82,6 +102,26 @@ function Copy-SteamAppIdIfPresent {
     }
 
     Copy-Item -LiteralPath $appIdSource -Destination (Join-Path $OutputDirectory "steam_appid.txt") -Force
+}
+
+function Copy-SteamRuntimeIfPresent {
+    param(
+        [string]$GodotExecutable,
+        [string]$RepoRoot,
+        [string]$OutputDirectory
+    )
+
+    $candidatePaths = @(
+        (Join-Path (Split-Path -Parent $GodotExecutable) "steam_api64.dll"),
+        (Join-Path $RepoRoot "tools\godotsteam\templates\win64\steam_api64.dll")
+    )
+
+    foreach ($candidatePath in $candidatePaths) {
+        if (Test-Path $candidatePath) {
+            Copy-Item -LiteralPath $candidatePath -Destination (Join-Path $OutputDirectory "steam_api64.dll") -Force
+            return
+        }
+    }
 }
 
 $repoRoot = Get-RepoRoot
@@ -116,5 +156,6 @@ if (-not (Test-Path $resolvedOutput)) {
 }
 
 Copy-SteamAppIdIfPresent -RepoRoot $repoRoot -OutputDirectory $outputDir
+Copy-SteamRuntimeIfPresent -GodotExecutable $godot -RepoRoot $repoRoot -OutputDirectory $outputDir
 
 Write-Host "Export complete: $resolvedOutput"

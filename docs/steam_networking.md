@@ -13,13 +13,26 @@ This avoids deterministic lockstep problems while the MVP still uses frame delta
 
 ## Required Plugin
 
-Install a GodotSteam GDExtension build that matches the Godot version used by the project.
+Install the GodotSteam editor and export templates that match the Godot version used by the project.
 
 - GodotSteam project: https://github.com/GodotSteam/GodotSteam
 - GodotSteam moved notice / Codeberg link: https://codeberg.org/godotsteam/godotsteam
-- The latest GitHub release seen during implementation was `Godot 4.6.3 - Steamworks 1.64 - GodotSteam 4.19.1`.
+- Current local Steam build target: `Godot 4.6.3 - Steamworks 1.64 - GodotSteam 4.19.1`.
 
-The project currently runs on Godot `4.7.stable`. Do not commit an incompatible GodotSteam binary just to make the editor load. Use a GodotSteam build compiled for Godot 4.7, or temporarily align the project/editor version with the plugin build in a separate PR.
+GodotSteam `v4.19.1` is distributed as a Godot editor/export-template build, not as a regular `addons/` GDExtension plugin. Local binaries are installed under ignored `tools/godotsteam/`:
+
+- `tools/godotsteam/editor/godotsteam.463.editor.win64.console.exe`
+- `tools/godotsteam/editor/godotsteam.463.editor.win64.exe`
+- `tools/godotsteam/templates/win64/godotsteam.463.template.win64.exe`
+- `tools/godotsteam/templates/win64/steam_api64.dll`
+
+The repository tracks the integration scripts and docs, but does not commit these downloaded binaries.
+
+Install or refresh the ignored local GodotSteam files with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install_godotsteam.ps1
+```
 
 ## Local Steam Test App ID
 
@@ -32,6 +45,8 @@ Copy-Item steam_appid.example.txt steam_appid.txt
 `steam_appid.txt` is ignored by Git. The example uses Valve's test App ID `480`.
 
 When exporting with `scripts/export_windows.ps1`, an existing local `steam_appid.txt` is copied next to `builds/AiGameTest.exe`.
+
+When `tools/godotsteam` is present, `scripts/export_windows.ps1` prefers the GodotSteam editor, installs the matching Windows export template into its self-contained editor data, and copies `steam_api64.dll` next to the exported `.exe`.
 
 ## Controls
 
@@ -72,7 +87,7 @@ Online match controls:
 
 ## Test Flow
 
-1. Install a compatible GodotSteam GDExtension in `addons/`.
+1. Install the GodotSteam 4.6.3 editor/templates under `tools/godotsteam/`.
 2. Start Steam on both machines with two different Steam accounts.
 3. Create local `steam_appid.txt` from the example, or launch through Steam with a real app id.
 4. Host runs the game, opens `Lobby`, and clicks `Connect Steam`.

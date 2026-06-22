@@ -1,10 +1,10 @@
 # AiGameTest
 
-Godot 4.7.x Standard + GDScript 협업 프로젝트입니다.
+GodotSteam 4.6.3 + GDScript project.
 
 ## Project Defaults
 
-- Engine: Godot 4.7.x Standard
+- Engine: GodotSteam 4.6.3 for Steam builds, Godot 4.6.x Standard for local-only editing
 - Language: GDScript only
 - Git host: GitHub
 - Workflow: branch + Pull Request
@@ -20,6 +20,7 @@ Godot 4.7.x Standard + GDScript 협업 프로젝트입니다.
 - `addons/`: Godot addons
 - `docs/`: setup and workflow notes
 - `exports/`, `builds/`: local build outputs; contents are ignored by Git
+- `tools/`: local editor/template downloads; ignored by Git
 
 ## Quick Start
 
@@ -28,7 +29,21 @@ git lfs install
 git lfs pull
 ```
 
-Open this folder in Godot and run `res://scenes/main.tscn`. The game starts at the main menu.
+Open this folder in GodotSteam 4.6.3 and run `res://scenes/main.tscn`. The game starts at the main menu.
+
+For local Steam testing, create the ignored App ID file:
+
+```powershell
+Copy-Item steam_appid.example.txt steam_appid.txt
+```
+
+Install the ignored local GodotSteam editor/templates:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install_godotsteam.ps1
+```
+
+Use `scripts/export_windows.ps1` to export a Windows build. When `tools/godotsteam` is present, the script uses the GodotSteam editor/templates and copies `steam_api64.dll` next to the exported `.exe`.
 
 ## Current MVP
 
