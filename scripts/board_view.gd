@@ -123,6 +123,7 @@ func _draw() -> void:
 
 	_draw_player_area(match_controller.players[0], 0)
 	_draw_player_area(match_controller.players[1], 1)
+	_draw_visual_effects()
 
 	if match_controller.phase == MatchController.MatchPhase.RELIC_SELECT:
 		_draw_relic_select_area(match_controller.players[0], 0)
@@ -237,6 +238,9 @@ func _make_button(button_position: Vector2, button_size: Vector2, label_text: St
 
 
 func _update_control_buttons() -> void:
+	if match_controller == null:
+		return
+
 	for player_id in range(2):
 		var enabled := _is_player_action_enabled(player_id)
 		for action_name in ["summon", "merge", "attack", "boss"]:
@@ -255,6 +259,8 @@ func _update_control_buttons() -> void:
 
 func _is_player_action_enabled(player_id: int) -> bool:
 	if match_controller == null:
+		return false
+	if match_controller.players.size() < 2:
 		return false
 	if match_controller.game_over:
 		return false
@@ -275,6 +281,7 @@ func _on_network_button_pressed(action_name: String) -> void:
 
 func _update_labels() -> void:
 	if match_controller == null or match_controller.players.size() < 2:
+		_update_control_buttons()
 		return
 
 	var player_a: PlayerState = match_controller.players[0]
@@ -493,6 +500,136 @@ func _draw_build_profile(player: PlayerState, player_id: int) -> void:
 		color.a = alpha
 		draw_rect(swatch_rect, color, true)
 		draw_rect(swatch_rect, Color(0.85, 0.88, 0.92), false, 1.0)
+
+
+func _draw_visual_effects() -> void:
+	if match_controller == null:
+		return
+
+	for effect in match_controller.visual_effects:
+		var kind := str(effect.get("kind", ""))
+		match kind:
+			"attack":
+				_draw_attack_effect(effect)
+			"chain":
+				_draw_chain_effect(effect)
+			"burst":
+				_draw_burst_effect(effect)
+			"spawn", "death", "leak":
+				_draw_monster_event_effect(effect)
+			_:
+				continue
+
+
+func _draw_attack_effect(effect: Dictionary) -> void:
+	var player_id := int(effect.get("player_id", 0))
+	var tower_type := int(effect.get("tower_type", TowerData.TowerType.FIRE))
+	var cell := Vector2i(
+		int(effect.get("cell_x", 0)),
+		int(effect.get("cell_y", 0))
+	)
+	var start := _get_cell_position(player_id, cell) + Vector2(CELL_SIZE * 0.5, CELL_SIZE * 0.5)
+	var end := _get_effect_monster_position(player_id, effect)
+	var alpha := _get_effect_alpha(effect)
+	var color := TowerData.get_color(tower_type)
+	color.a = alpha
+
+	match tower_type:
+		TowerData.TowerType.FIRE:
+			draw_line(start, end, color, 4.0)
+			draw_circle(end, 8.0 + 10.0 * alpha, _with_alpha(color, 0.28 * alpha))
+		TowerData.TowerType.POISON:
+			draw_line(start, end, _with_alpha(color, 0.55 * alpha), 2.5)
+			draw_arc(end, 14.0, 0.0, TAU, 18, color, 2.5)
+		TowerData.TowerType.ICE:
+			draw_line(start, end, _with_alpha(color, 0.65 * alpha), 3.0)
+			draw_line(end + Vector2(-9.0, 0.0), end + Vector2(9.0, 0.0), color, 2.0)
+			draw_line(end + Vector2(0.0, -9.0), end + Vector2(0.0, 9.0), color, 2.0)
+		TowerData.TowerType.LIGHTNING:
+			var mid := (start + end) * 0.5 + Vector2(0.0, -16.0)
+			draw_polyline(PackedVector2Array([start, mid, end]), color, 3.0)
+		TowerData.TowerType.CURSE:
+			draw_line(start, end, _with_alpha(color, 0.65 * alpha), 3.0)
+			draw_rect(Rect2(end - Vector2(10.0, 10.0), Vector2(20.0, 20.0)), _with_alpha(color, 0.25 * alpha), false, 2.0)
+
+
+func _draw_chain_effect(effect: Dictionary) -> void:
+	var player_id := int(effect.get("player_id", 0))
+	var start := _get_effect_position_from_progress(
+		player_id,
+		float(effect.get("from_progress", 0.0)),
+		float(effect.get("from_lane_offset", 0.0))
+	)
+	var end := _get_effect_monster_position(player_id, effect)
+	var color := TowerData.get_color(int(effect.get("tower_type", TowerData.TowerType.LIGHTNING)))
+	color.a = _get_effect_alpha(effect)
+	var mid := (start + end) * 0.5 + Vector2(10.0, -10.0)
+	draw_polyline(PackedVector2Array([start, mid, end]), color, 2.5)
+
+
+func _draw_burst_effect(effect: Dictionary) -> void:
+	var player_id := int(effect.get("player_id", 0))
+	var tower_type := int(effect.get("tower_type", TowerData.TowerType.FIRE))
+	var position_value := _get_effect_monster_position(player_id, effect)
+	var progress := _get_effect_progress(effect)
+	var radius := float(effect.get("radius", 24.0)) * progress
+	var color := TowerData.get_color(tower_type)
+	color.a = _get_effect_alpha(effect)
+	draw_arc(position_value, radius, 0.0, TAU, 28, color, 3.0)
+
+	if tower_type == TowerData.TowerType.POISON:
+		draw_circle(position_value, maxf(4.0, radius * 0.25), _with_alpha(color, 0.16 * color.a))
+	elif tower_type == TowerData.TowerType.ICE:
+		draw_line(position_value + Vector2(-radius, 0.0), position_value + Vector2(radius, 0.0), color, 1.8)
+		draw_line(position_value + Vector2(0.0, -radius), position_value + Vector2(0.0, radius), color, 1.8)
+
+
+func _draw_monster_event_effect(effect: Dictionary) -> void:
+	var player_id := int(effect.get("player_id", 0))
+	var monster_type := int(effect.get("monster_type", MonsterData.MonsterType.BASIC))
+	var position_value := _get_effect_monster_position(player_id, effect)
+	var progress := _get_effect_progress(effect)
+	var radius := float(effect.get("radius", 24.0)) * (0.5 + progress)
+	var color := MonsterData.get_color(monster_type)
+	color.a = _get_effect_alpha(effect)
+	draw_arc(position_value, radius, 0.0, TAU, 24, color, 2.5)
+
+	var kind := str(effect.get("kind", ""))
+	if kind == "leak":
+		draw_line(position_value + Vector2(-12.0, -12.0), position_value + Vector2(12.0, 12.0), color, 2.0)
+		draw_line(position_value + Vector2(12.0, -12.0), position_value + Vector2(-12.0, 12.0), color, 2.0)
+	elif kind == "spawn":
+		draw_circle(position_value, 5.0 + 8.0 * progress, _with_alpha(color, 0.2 * color.a))
+
+
+func _get_effect_monster_position(player_id: int, effect: Dictionary) -> Vector2:
+	return _get_effect_position_from_progress(
+		player_id,
+		float(effect.get("progress", 0.0)),
+		float(effect.get("lane_offset", 0.0))
+	)
+
+
+func _get_effect_position_from_progress(player_id: int, progress_value: float, lane_offset: float) -> Vector2:
+	var path_x := _get_path_x(player_id)
+	var progress_ratio := clampf(progress_value / MatchController.PATH_LENGTH, 0.0, 1.0)
+	var y := lerpf(PATH_TOP, PATH_BOTTOM, progress_ratio)
+	return Vector2(path_x + lane_offset, y)
+
+
+func _get_effect_progress(effect: Dictionary) -> float:
+	var duration := maxf(0.01, float(effect.get("duration", 0.45)))
+	return clampf(float(effect.get("age", 0.0)) / duration, 0.0, 1.0)
+
+
+func _get_effect_alpha(effect: Dictionary) -> float:
+	return 1.0 - _get_effect_progress(effect)
+
+
+func _with_alpha(color: Color, alpha: float) -> Color:
+	var result := color
+	result.a = clampf(alpha, 0.0, 1.0)
+	return result
 
 
 func _get_grid_origin(player_id: int) -> Vector2:

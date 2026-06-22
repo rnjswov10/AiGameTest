@@ -35,13 +35,29 @@ When exporting with `scripts/export_windows.ps1`, an existing local `steam_appid
 
 ## Controls
 
-Steam lobby buttons:
+Main menu `Lobby` panel:
 
-- `Host`: Host a Steam lobby. The lobby id is copied to the clipboard.
-- `Find`: Search public Steam lobbies and join the first matching AiGameTest lobby.
-- `Join Code`: Join the lobby id currently in the clipboard.
+- `Connect Steam`: Initialize GodotSteam and read the currently logged-in Steam persona name and Steam ID.
+- `Host Steam`: Host a Steam lobby. The lobby id is copied to the clipboard.
+- `Find Public`: Search public Steam lobbies and join the first matching AiGameTest lobby.
+- `Paste Code`: Paste the clipboard lobby id into the lobby id field.
+- `Join`: Join the numeric Steam lobby id typed into the field.
+
+The game does not collect Steam credentials. Steam login happens in the Steam client, and the game only reads the active account through GodotSteam.
+
+When a lobby is created, the host writes these lobby metadata fields:
+
+- `host_name`: Steam persona name shown to joiners.
+- `host_id`: Host Steam ID.
+- `game_version`: Current game version string.
+- `mode`: `1v1`.
+- `protocol`: Network protocol version.
+- `seed`: Match seed for the hosted session.
+
+In-game Steam buttons:
+
 - `Copy Code`: Copy the current lobby id.
-- `Leave`: Leave the Steam lobby and return to local mode.
+- `Leave`: Leave the Steam lobby and return to the main menu.
 - `Restart`: Restart the local match or host match.
 
 Keyboard shortcuts are still available: `H`, `L`, `V`, `C`, `Esc`, and `R`.
@@ -59,10 +75,12 @@ Online match controls:
 1. Install a compatible GodotSteam GDExtension in `addons/`.
 2. Start Steam on both machines with two different Steam accounts.
 3. Create local `steam_appid.txt` from the example, or launch through Steam with a real app id.
-4. Host runs the game and presses `H`.
-5. Client either presses `L`, or receives the copied lobby id and presses `V` after putting it in the clipboard.
-6. Host should see Player A; client should see Player B.
-7. Client commands should affect Player B on the host, then appear on the client through snapshots.
+4. Host runs the game, opens `Lobby`, and clicks `Connect Steam`.
+5. The host verifies the displayed Steam persona name and Steam ID.
+6. Host clicks `Host Steam`.
+7. Client opens `Lobby`, clicks `Connect Steam`, then either clicks `Find Public`, or receives the copied lobby id, types or pastes it into the lobby id field, and clicks `Join`.
+8. Host should see Player A; client should see Player B.
+9. Client commands should affect Player B on the host, then appear on the client through snapshots.
 
 ## Notes
 

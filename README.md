@@ -28,7 +28,7 @@ git lfs install
 git lfs pull
 ```
 
-Open this folder in Godot and run `res://scenes/main.tscn`.
+Open this folder in Godot and run `res://scenes/main.tscn`. The game starts at the main menu.
 
 ## Current MVP
 
@@ -36,6 +36,10 @@ The current prototype is a local 1v1 PvP roguelite tower-defense simulation with
 
 - Player A uses the left board.
 - Player B uses the right board.
+- Main menu buttons: `Local 1v1`, `Lobby`, `Settings`, and `Quit`.
+- The `Lobby` panel includes `Connect Steam`, `Host Steam`, `Find Public`, `Paste Code`, and direct numeric lobby ID join.
+- Steam account login is handled by the Steam client. The game only checks the logged-in Steam account and displays the persona name and Steam ID.
+- Settings include fullscreen, borderless window, resolution, VSync, and master volume. They are saved to the local user settings file.
 - Click a cell to select it.
 - Player A: `Q` summon, `W` merge, `E` send attack wave.
 - Player B: `I` summon, `O` merge, `P` send attack wave.
@@ -45,6 +49,7 @@ The current prototype is a local 1v1 PvP roguelite tower-defense simulation with
 - Steam lobby controls are available as buttons: `Host`, `Find`, `Join Code`, `Copy Code`, `Leave`, and `Restart`.
 - Keyboard shortcuts are still available: `H` host, `L` find lobby, `C` copy lobby id, `V` join clipboard lobby id, `Esc` leave lobby.
 - In Steam online mode, host is Player A and client is Player B. Each side can use the player action buttons or `Q`, `W`, `E`, and `A` for their own board.
+- Steam lobbies store host metadata: `host_name`, `host_id`, `game_version`, `mode`, `protocol`, and match `seed`.
 
 Towers are colored squares with `Lv1`, `Lv2`, and higher labels. Monsters are colored circles. Your dominant tower color determines the monster type sent to the opponent when using the attack gauge.
 

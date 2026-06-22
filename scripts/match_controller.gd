@@ -14,6 +14,8 @@ const STAGE_BASE_DURATION := 30.0
 const STAGE_DURATION_GAIN := 2.0
 const STAGE_COMPLETE_GOLD := 20
 const ATTACK_WAVE_BASE_COUNT := 3
+const EFFECT_MAX_AGE := 0.75
+const EFFECT_MAX_COUNT := 80
 
 var rng := RandomNumberGenerator.new()
 var relic_library := RelicLibrary.new()
@@ -28,10 +30,11 @@ var spawn_timer: float = 0.0
 var game_over: bool = false
 var winner_text: String = ""
 var last_event_text: String = ""
-var simulation_active: bool = true
+var simulation_active: bool = false
 var network_status_text: String = "Local mode"
 var network_mode_name: String = "Local"
 var network_local_player_id: int = -1
+var visual_effects: Array = []
 
 
 func start_match(initial_seed: int = 0) -> void:
@@ -52,7 +55,25 @@ func start_match(initial_seed: int = 0) -> void:
 	winner_text = ""
 	last_event_text = "Match seed %d" % match_seed
 	simulation_active = true
+	visual_effects.clear()
 	_start_stage()
+
+
+func reset_to_menu() -> void:
+	players.clear()
+	match_time = 0.0
+	stage_number = 1
+	wave_number = 1
+	phase = MatchPhase.COMBAT
+	stage_timer = 0.0
+	spawn_timer = 0.0
+	game_over = false
+	winner_text = ""
+	last_event_text = ""
+	simulation_active = false
+	network_mode_name = "Local"
+	network_local_player_id = -1
+	visual_effects.clear()
 
 
 func _process(delta: float) -> void:
@@ -69,6 +90,7 @@ func _process(delta: float) -> void:
 		return
 
 	match_time += delta
+	_update_visual_effects(delta)
 	_update_challenge_boss_timers()
 	_update_combat(delta)
 	_update_monsters(delta)
@@ -303,6 +325,7 @@ func create_network_snapshot() -> Dictionary:
 		"winner_text": winner_text,
 		"last_event_text": last_event_text,
 		"players": player_snapshots,
+		"visual_effects": visual_effects.duplicate(true),
 	}
 
 
@@ -317,6 +340,7 @@ func apply_network_snapshot(snapshot: Dictionary) -> void:
 	game_over = bool(snapshot.get("game_over", false))
 	winner_text = str(snapshot.get("winner_text", ""))
 	last_event_text = str(snapshot.get("last_event_text", ""))
+	visual_effects = _snapshot_effects(snapshot.get("visual_effects", []))
 
 	var player_snapshots: Variant = snapshot.get("players", [])
 	if player_snapshots is Array:
@@ -395,7 +419,9 @@ func _spawn_regular_wave() -> void:
 
 
 func _spawn_monster(player: PlayerState, monster_type: int, lane_offset: float = 0.0) -> void:
-	player.monsters.append(MonsterData.new(monster_type, stage_number, lane_offset))
+	var monster := MonsterData.new(monster_type, stage_number, lane_offset)
+	player.monsters.append(monster)
+	_add_monster_effect("spawn", player.player_id, monster, monster_type, 22.0)
 
 
 func _update_combat(delta: float) -> void:
@@ -422,9 +448,9 @@ func _update_player_towers(player: PlayerState, delta: float) -> void:
 			if target == null:
 				continue
 
-			_apply_tower_attack(player, tower, target)
+			_apply_tower_attack(player, cell, tower, target)
 			if not target.is_dead() and _should_double_attack(player, tower):
-				_apply_tower_attack(player, tower, target)
+				_apply_tower_attack(player, cell, tower, target)
 			tower.cooldown = tower.get_attack_interval() * player.get_tower_slow_multiplier()
 
 
@@ -450,13 +476,14 @@ func _get_virtual_monster_position(monster: MonsterData) -> Vector2:
 	return Vector2(5.4, y_position)
 
 
-func _apply_tower_attack(player: PlayerState, tower: TowerData, target: MonsterData) -> void:
+func _apply_tower_attack(player: PlayerState, cell: Vector2i, tower: TowerData, target: MonsterData) -> void:
 	var damage := tower.get_damage()
 	damage *= _get_tower_damage_multiplier(player, tower, target)
 	damage *= _get_repeat_target_multiplier(player, tower, target)
 
 	target.last_hit_tower_type = tower.tower_type
 	target.take_damage(damage)
+	_add_attack_effect(player.player_id, cell, target, tower.tower_type)
 
 	if tower.tower_type == TowerData.TowerType.CURSE:
 		var gauge_bonus := tower.get_gauge_bonus()
@@ -475,12 +502,14 @@ func _apply_tower_attack(player: PlayerState, tower: TowerData, target: MonsterD
 			_apply_lightning_attack(player, target, damage)
 		TowerData.TowerType.CURSE:
 			target.add_slow(0.8, 0.78)
+			_add_burst_effect(player.player_id, target, tower.tower_type, 30.0)
 
 
 func _apply_poison_attack(player: PlayerState, tower: TowerData, target: MonsterData, damage: float) -> void:
 	var duration := 3.0 * player.get_relic_multiplier("poison_duration_mult", "multiplier", TowerData.TowerType.POISON)
 	var poison_damage := damage * 0.35
 	target.add_poison(duration, poison_damage)
+	_add_burst_effect(player.player_id, target, TowerData.TowerType.POISON, 24.0)
 
 	var immediate_ratio := player.get_relic_max("poison_immediate_damage_ratio", "ratio")
 	if immediate_ratio > 0.0 and _player_has_tower_type(player, TowerData.TowerType.FIRE):
@@ -497,6 +526,7 @@ func _apply_ice_attack(player: PlayerState, tower: TowerData, target: MonsterDat
 	var duration := (1.4 + float(tower.level) * 0.2)
 	duration *= player.get_relic_multiplier("slow_duration_mult", "multiplier", TowerData.TowerType.ICE)
 	target.add_slow(duration, 0.58)
+	_add_burst_effect(player.player_id, target, TowerData.TowerType.ICE, 26.0)
 
 	var freeze_chance := player.get_relic_chance("ice_freeze_chance", "chance", TowerData.TowerType.ICE)
 	if freeze_chance > 0.0 and rng.randf() < freeze_chance:
@@ -569,6 +599,7 @@ func _register_lightning_hit(player: PlayerState, target: MonsterData) -> void:
 	var damage := player.get_relic_max("lightning_repeat_hit_explosion", "damage", TowerData.TowerType.LIGHTNING)
 	var radius := player.get_relic_max("lightning_repeat_hit_explosion", "radius", TowerData.TowerType.LIGHTNING)
 	_damage_monsters_near_progress(player, target.progress, radius, damage, target)
+	_add_burst_effect(player.player_id, target, TowerData.TowerType.LIGHTNING, radius)
 
 
 func _chain_lightning(player: PlayerState, first_target: MonsterData, damage: float) -> void:
@@ -586,6 +617,7 @@ func _chain_lightning(player: PlayerState, first_target: MonsterData, damage: fl
 		monster.last_hit_tower_type = TowerData.TowerType.LIGHTNING
 		monster.take_damage(chain_damage)
 		_register_lightning_hit(player, monster)
+		_add_chain_effect(player.player_id, first_target, monster, TowerData.TowerType.LIGHTNING)
 		hit_count += 1
 		if hit_count >= hit_limit:
 			return
@@ -600,6 +632,7 @@ func _update_monsters(delta: float) -> void:
 
 			if monster.is_dead():
 				_handle_monster_death(player, monster)
+				_add_monster_effect("death", player.player_id, monster, monster.monster_type, 34.0)
 				player.monsters.remove_at(index)
 				continue
 
@@ -609,6 +642,7 @@ func _update_monsters(delta: float) -> void:
 					_fail_challenge_boss(player)
 				else:
 					player.set_message("%s leaked." % MonsterData.get_display_name(monster.monster_type))
+				_add_monster_effect("leak", player.player_id, monster, monster.monster_type, 42.0)
 				player.monsters.remove_at(index)
 
 
@@ -737,6 +771,89 @@ func _find_nearest_monsters(player: PlayerState, origin_progress: float, count: 
 			continue
 		_insert_nearest_monster(nearest, target, origin_progress, count)
 	return nearest
+
+
+func _update_visual_effects(delta: float) -> void:
+	for index in range(visual_effects.size() - 1, -1, -1):
+		var effect: Dictionary = visual_effects[index]
+		effect["age"] = float(effect.get("age", 0.0)) + delta
+		if float(effect["age"]) >= float(effect.get("duration", EFFECT_MAX_AGE)):
+			visual_effects.remove_at(index)
+		else:
+			visual_effects[index] = effect
+
+
+func _add_attack_effect(player_id: int, cell: Vector2i, target: MonsterData, tower_type: int) -> void:
+	_add_effect({
+		"kind": "attack",
+		"player_id": player_id,
+		"tower_type": tower_type,
+		"cell_x": cell.x,
+		"cell_y": cell.y,
+		"progress": target.progress,
+		"lane_offset": target.lane_offset,
+		"age": 0.0,
+		"duration": 0.28,
+		"radius": 18.0,
+	})
+
+
+func _add_chain_effect(player_id: int, source: MonsterData, target: MonsterData, tower_type: int) -> void:
+	_add_effect({
+		"kind": "chain",
+		"player_id": player_id,
+		"tower_type": tower_type,
+		"from_progress": source.progress,
+		"from_lane_offset": source.lane_offset,
+		"progress": target.progress,
+		"lane_offset": target.lane_offset,
+		"age": 0.0,
+		"duration": 0.24,
+		"radius": 18.0,
+	})
+
+
+func _add_burst_effect(player_id: int, target: MonsterData, tower_type: int, radius: float) -> void:
+	_add_effect({
+		"kind": "burst",
+		"player_id": player_id,
+		"tower_type": tower_type,
+		"progress": target.progress,
+		"lane_offset": target.lane_offset,
+		"age": 0.0,
+		"duration": 0.42,
+		"radius": radius,
+	})
+
+
+func _add_monster_effect(kind: String, player_id: int, monster: MonsterData, monster_type: int, radius: float) -> void:
+	_add_effect({
+		"kind": kind,
+		"player_id": player_id,
+		"monster_type": monster_type,
+		"progress": monster.progress,
+		"lane_offset": monster.lane_offset,
+		"age": 0.0,
+		"duration": 0.45,
+		"radius": radius,
+	})
+
+
+func _add_effect(effect: Dictionary) -> void:
+	visual_effects.append(effect)
+	while visual_effects.size() > EFFECT_MAX_COUNT:
+		visual_effects.pop_front()
+
+
+func _snapshot_effects(value: Variant) -> Array:
+	var effects: Array = []
+	if not (value is Array):
+		return effects
+
+	for effect in value:
+		if effect is Dictionary:
+			effects.append(effect.duplicate(true))
+	return effects
 
 
 func _insert_nearest_monster(nearest: Array, target: MonsterData, origin_progress: float, limit: int) -> void:

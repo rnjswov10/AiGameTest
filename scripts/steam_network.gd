@@ -21,10 +21,12 @@ const SNAPSHOT_INTERVAL := 0.12
 
 var steam: Object = null
 var steam_ready: bool = false
+var steam_logged_on: bool = false
 var mode: int = NetworkMode.OFFLINE
 var local_player_id: int = -1
 var current_lobby_id: int = 0
 var own_steam_id: int = 0
+var persona_name: String = ""
 var peer_steam_id: int = 0
 var status_text: String = "Steam unavailable"
 var match_controller: MatchController = null
@@ -54,6 +56,9 @@ func set_match_controller(controller: MatchController) -> void:
 
 
 func initialize() -> bool:
+	if steam_ready:
+		return refresh_account()
+
 	if not Engine.has_singleton("Steam"):
 		_set_status("Steam plugin not loaded. Local mode only.")
 		return false
@@ -74,9 +79,26 @@ func initialize() -> bool:
 		return false
 
 	steam_ready = true
-	own_steam_id = _get_own_steam_id()
 	_connect_steam_signals()
-	_set_status("Steam ready. H host, L find, V join clipboard.")
+	return refresh_account()
+
+
+func refresh_account() -> bool:
+	if steam == null and not initialize():
+		return false
+
+	own_steam_id = _get_own_steam_id()
+	persona_name = _get_persona_name()
+	steam_logged_on = _is_logged_on()
+
+	if not steam_logged_on:
+		_set_status("Steam plugin loaded, but Steam is not logged in. Open Steam, log in, then click Connect Steam.")
+		return false
+
+	_set_status("Steam connected as %s\nSteam ID: %d\nUse Lobby to host, find, or join by id." % [
+		_get_account_display_name(),
+		own_steam_id,
+	])
 	return true
 
 
@@ -93,7 +115,7 @@ func is_client() -> bool:
 
 
 func host_match() -> bool:
-	if not _require_steam_ready():
+	if not _require_steam_session():
 		return false
 
 	mode = NetworkMode.HOST
@@ -106,7 +128,7 @@ func host_match() -> bool:
 
 
 func find_public_lobby() -> bool:
-	if not _require_steam_ready():
+	if not _require_steam_session():
 		return false
 
 	mode = NetworkMode.CLIENT
@@ -117,7 +139,7 @@ func find_public_lobby() -> bool:
 
 
 func join_lobby(lobby_id: int) -> bool:
-	if not _require_steam_ready():
+	if not _require_steam_session():
 		return false
 	if lobby_id <= 0:
 		_set_status("Invalid Steam lobby id.")
@@ -199,10 +221,28 @@ func get_status_text() -> String:
 	return status_text
 
 
+func is_steam_connected() -> bool:
+	return steam_ready and steam_logged_on
+
+
+func get_account_display_name() -> String:
+	return _get_account_display_name()
+
+
 func _require_steam_ready() -> bool:
 	if steam_ready:
 		return true
 	return initialize()
+
+
+func _require_steam_session() -> bool:
+	if not _require_steam_ready():
+		return false
+	if refresh_account():
+		return true
+
+	_set_status("Steam login required. Open Steam, log in, then click Connect Steam.")
+	return false
 
 
 func _connect_steam_signals() -> void:
@@ -326,10 +366,35 @@ func _get_own_steam_id() -> int:
 	return 0
 
 
+func _get_persona_name() -> String:
+	if steam != null and steam.has_method("getPersonaName"):
+		return str(steam.call("getPersonaName"))
+	return ""
+
+
+func _is_logged_on() -> bool:
+	if steam != null and steam.has_method("loggedOn"):
+		return bool(steam.call("loggedOn"))
+	if steam != null and steam.has_method("isLoggedOn"):
+		return bool(steam.call("isLoggedOn"))
+	return own_steam_id != 0
+
+
+func _get_account_display_name() -> String:
+	if persona_name.strip_edges() != "":
+		return persona_name
+	if own_steam_id != 0:
+		return "Steam User %d" % own_steam_id
+	return "Unknown Steam User"
+
+
 func _set_lobby_data(lobby_id: int) -> void:
 	steam.call("setLobbyData", lobby_id, "game", GAME_TAG)
 	steam.call("setLobbyData", lobby_id, "protocol", str(PROTOCOL_VERSION))
 	steam.call("setLobbyData", lobby_id, "mode", "1v1")
+	steam.call("setLobbyData", lobby_id, "host_name", _get_account_display_name())
+	steam.call("setLobbyData", lobby_id, "host_id", str(own_steam_id))
+	steam.call("setLobbyData", lobby_id, "game_version", "0.1.0")
 	if match_controller != null:
 		steam.call("setLobbyData", lobby_id, "seed", str(match_controller.match_seed))
 	steam.call("setLobbyJoinable", lobby_id, true)
@@ -357,7 +422,10 @@ func _on_lobby_created(result: int, lobby_id: int) -> void:
 	current_lobby_id = lobby_id
 	_set_lobby_data(lobby_id)
 	DisplayServer.clipboard_set(str(lobby_id))
-	_set_status("Hosting lobby %d. Code copied." % lobby_id)
+	_set_status("Hosting lobby %d as %s. Code copied." % [
+		lobby_id,
+		_get_account_display_name(),
+	])
 
 
 func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: bool, response: int) -> void:
@@ -369,13 +437,22 @@ func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: bool, response:
 
 	current_lobby_id = lobby_id
 	if mode == NetworkMode.HOST:
-		_set_status("Hosting lobby %d." % lobby_id)
+		_set_status("Hosting lobby %d as %s." % [
+			lobby_id,
+			_get_account_display_name(),
+		])
 		return
 
 	mode = NetworkMode.CLIENT
 	local_player_id = 1
 	peer_steam_id = _get_lobby_owner(lobby_id)
-	_set_status("Joined lobby %d. Waiting for host snapshot." % lobby_id)
+	var host_name := str(steam.call("getLobbyData", lobby_id, "host_name"))
+	if host_name == "":
+		host_name = "host"
+	_set_status("Joined %s's lobby %d. Waiting for host snapshot." % [
+		host_name,
+		lobby_id,
+	])
 	_send_packet_to_peer({
 		"type": "hello",
 		"version": PROTOCOL_VERSION,
