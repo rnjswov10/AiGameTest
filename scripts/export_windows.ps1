@@ -118,7 +118,16 @@ function Copy-SteamRuntimeIfPresent {
 
     foreach ($candidatePath in $candidatePaths) {
         if (Test-Path $candidatePath) {
-            Copy-Item -LiteralPath $candidatePath -Destination (Join-Path $OutputDirectory "steam_api64.dll") -Force
+            $destinationPath = Join-Path $OutputDirectory "steam_api64.dll"
+            try {
+                Copy-Item -LiteralPath $candidatePath -Destination $destinationPath -Force
+            } catch {
+                if (Test-Path $destinationPath) {
+                    Write-Warning "steam_api64.dll is already present but could not be replaced. Close running builds to refresh it."
+                } else {
+                    throw
+                }
+            }
             return
         }
     }

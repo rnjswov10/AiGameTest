@@ -24,6 +24,7 @@ func _ready() -> void:
 	steam_network.remote_command_received.connect(_on_remote_command_received)
 	steam_network.snapshot_received.connect(_on_snapshot_received)
 	steam_network.status_changed.connect(_on_steam_status_changed)
+	steam_network.online_match_started.connect(_on_online_match_started)
 
 	board_view = BoardView.new()
 	add_child(board_view)
@@ -51,6 +52,7 @@ func _process(_delta: float) -> void:
 	)
 	if main_menu != null and main_menu.visible:
 		main_menu.set_status_text(steam_network.get_status_text())
+		main_menu.set_lobby_state(steam_network.get_lobby_snapshot())
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -194,6 +196,8 @@ func _run_network_action(action_name: String) -> void:
 			_start_find_lobby()
 		"join":
 			_start_join_lobby()
+		"ready":
+			_toggle_lobby_ready()
 		"copy":
 			steam_network.copy_lobby_code()
 		"leave":
@@ -229,8 +233,8 @@ func _start_host_match() -> void:
 	if steam_network == null:
 		return
 	if steam_network.host_match():
-		match_controller.start_match()
-		_show_game()
+		match_controller.reset_to_menu()
+		_show_lobby_waiting("Creating Steam lobby...")
 	else:
 		_show_menu("Steam host failed.")
 
@@ -240,7 +244,7 @@ func _start_find_lobby() -> void:
 		return
 	if steam_network.find_public_lobby():
 		match_controller.reset_to_menu()
-		_show_game()
+		_show_lobby_waiting("Searching Steam lobbies...")
 	else:
 		_show_menu("Steam lobby search failed.")
 
@@ -250,7 +254,7 @@ func _start_join_lobby() -> void:
 		return
 	if steam_network.join_lobby_from_clipboard():
 		match_controller.reset_to_menu()
-		_show_game()
+		_show_lobby_waiting("Joining Steam lobby...")
 	else:
 		_show_menu("Steam lobby join failed.")
 
@@ -260,15 +264,34 @@ func _start_join_lobby_by_id(lobby_id: int) -> void:
 		return
 	if steam_network.join_lobby(lobby_id):
 		match_controller.reset_to_menu()
-		_show_game()
+		_show_lobby_waiting("Joining Steam lobby...")
 	else:
 		_show_menu("Steam lobby join failed.")
+
+
+func _toggle_lobby_ready() -> void:
+	if steam_network == null:
+		return
+	steam_network.toggle_local_ready()
+	if main_menu != null:
+		main_menu.set_status_text(steam_network.get_status_text())
+		main_menu.set_lobby_state(steam_network.get_lobby_snapshot())
 
 
 func _show_game() -> void:
 	game_started = true
 	board_view.visible = true
 	main_menu.visible = false
+
+
+func _show_lobby_waiting(status_text: String) -> void:
+	game_started = false
+	board_view.visible = false
+	main_menu.visible = true
+	main_menu.set_menu_status(status_text)
+	main_menu.set_status_text(steam_network.get_status_text())
+	main_menu.set_lobby_state(steam_network.get_lobby_snapshot())
+	main_menu.open_lobby_panel()
 
 
 func _show_menu(status_text: String = "Select a mode to start.") -> void:
@@ -340,6 +363,12 @@ func _on_main_menu_action_requested(action_name: String) -> void:
 			_start_find_lobby()
 		"join":
 			_start_join_lobby()
+		"ready":
+			_toggle_lobby_ready()
+		"copy":
+			steam_network.copy_lobby_code()
+		"leave":
+			_return_to_menu()
 		"quit":
 			get_tree().quit()
 		_:
@@ -353,6 +382,11 @@ func _on_main_menu_lobby_join_requested(lobby_id: int) -> void:
 func _on_steam_status_changed(status_text: String) -> void:
 	if main_menu != null and main_menu.visible:
 		main_menu.set_status_text(status_text)
+		main_menu.set_lobby_state(steam_network.get_lobby_snapshot())
+
+
+func _on_online_match_started() -> void:
+	_show_game()
 
 
 func _on_menu_settings_changed(settings: Dictionary) -> void:

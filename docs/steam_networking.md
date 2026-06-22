@@ -57,6 +57,9 @@ Main menu `Lobby` panel:
 - `Find Public`: Search public Steam lobbies and join the first matching AiGameTest lobby.
 - `Paste Code`: Paste the clipboard lobby id into the lobby id field.
 - `Join`: Join the numeric Steam lobby id typed into the field.
+- `Copy Lobby ID`: Copy the current lobby id again so the host can send it to the other player.
+- `Ready`: Toggle local ready state. The match starts only after both players are ready.
+- `Leave Lobby`: Leave the current Steam lobby and return to offline menu state.
 
 The game does not collect Steam credentials. Steam login happens in the Steam client, and the game only reads the active account through GodotSteam.
 
@@ -68,6 +71,14 @@ When a lobby is created, the host writes these lobby metadata fields:
 - `mode`: `1v1`.
 - `protocol`: Network protocol version.
 - `seed`: Match seed for the hosted session.
+
+Lobby flow:
+
+1. Host clicks `Host Steam` and waits in the lobby panel.
+2. Host sends the copied lobby id to the opponent, or clicks `Copy Lobby ID` later to copy it again.
+3. Client enters the lobby id and clicks `Join`.
+4. Both players click `Ready`.
+5. The host starts the authoritative match and sends the first match snapshot to the client.
 
 In-game Steam buttons:
 
@@ -92,10 +103,12 @@ Online match controls:
 3. Create local `steam_appid.txt` from the example, or launch through Steam with a real app id.
 4. Host runs the game, opens `Lobby`, and clicks `Connect Steam`.
 5. The host verifies the displayed Steam persona name and Steam ID.
-6. Host clicks `Host Steam`.
-7. Client opens `Lobby`, clicks `Connect Steam`, then either clicks `Find Public`, or receives the copied lobby id, types or pastes it into the lobby id field, and clicks `Join`.
-8. Host should see Player A; client should see Player B.
-9. Client commands should affect Player B on the host, then appear on the client through snapshots.
+6. Host clicks `Host Steam` and remains in the lobby panel.
+7. Host sends the lobby id to the client. `Copy Lobby ID` can copy it again at any time.
+8. Client opens `Lobby`, clicks `Connect Steam`, then either clicks `Find Public`, or receives the copied lobby id, types or pastes it into the lobby id field, and clicks `Join`.
+9. Both players click `Ready`.
+10. Host should enter the match as Player A; client should enter the match as Player B.
+11. Client commands should affect Player B on the host, then appear on the client through snapshots.
 
 ## Notes
 

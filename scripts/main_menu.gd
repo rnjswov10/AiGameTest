@@ -18,7 +18,11 @@ var settings_panel: Control
 var lobby_panel: Control
 var lobby_code_input: LineEdit
 var steam_account_label: Label
+var lobby_id_label: Label
 var lobby_status_label: Label
+var ready_button: Button
+var copy_lobby_button: Button
+var leave_lobby_button: Button
 var fullscreen_check: CheckButton
 var borderless_check: CheckButton
 var resolution_option: OptionButton
@@ -48,6 +52,33 @@ func set_status_text(text: String) -> void:
 		steam_account_label.text = text
 	if lobby_status_label != null:
 		lobby_status_label.text = text
+
+
+func set_lobby_state(lobby_state: Dictionary) -> void:
+	if ready_button == null:
+		return
+
+	var online := bool(lobby_state.get("online", false))
+	var lobby_id := int(lobby_state.get("lobby_id", 0))
+	var match_active := bool(lobby_state.get("match_active", false))
+	var local_ready := bool(lobby_state.get("local_ready", false))
+
+	if lobby_id > 0:
+		lobby_id_label.text = "Lobby ID: %d" % lobby_id
+	else:
+		lobby_id_label.text = "Lobby ID: -"
+
+	ready_button.text = "Cancel Ready" if local_ready else "Ready"
+	ready_button.disabled = not online or match_active
+	copy_lobby_button.disabled = lobby_id <= 0
+	leave_lobby_button.disabled = not online
+
+	if lobby_status_label != null:
+		lobby_status_label.text = str(lobby_state.get("status", ""))
+
+
+func open_lobby_panel() -> void:
+	_show_lobby_panel()
 
 
 func set_menu_status(text: String) -> void:
@@ -158,8 +189,8 @@ func _create_status_labels() -> void:
 
 func _create_lobby_panel() -> void:
 	lobby_panel = Control.new()
-	lobby_panel.position = Vector2(420.0, 206.0)
-	lobby_panel.size = Vector2(540.0, 354.0)
+	lobby_panel.position = Vector2(420.0, 182.0)
+	lobby_panel.size = Vector2(560.0, 408.0)
 	lobby_panel.visible = false
 	add_child(lobby_panel)
 
@@ -172,24 +203,24 @@ func _create_lobby_panel() -> void:
 	var title := _make_settings_label(Vector2(18.0, 12.0), Vector2(280.0, 28.0), "Steam Lobby", 20)
 	lobby_panel.add_child(title)
 
-	steam_account_label = _make_settings_label(Vector2(18.0, 46.0), Vector2(502.0, 58.0), "", 13)
+	steam_account_label = _make_settings_label(Vector2(18.0, 46.0), Vector2(522.0, 58.0), "", 13)
 	steam_account_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	steam_account_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	lobby_panel.add_child(steam_account_label)
 
-	var connect_button := _make_panel_button(Vector2(18.0, 116.0), Vector2(148.0, 36.0), "Connect Steam")
+	var connect_button := _make_panel_button(Vector2(18.0, 116.0), Vector2(158.0, 36.0), "Connect Steam")
 	connect_button.pressed.connect(_on_lobby_action_pressed.bind("steam_login"))
 	lobby_panel.add_child(connect_button)
 
-	var host_button := _make_panel_button(Vector2(184.0, 116.0), Vector2(148.0, 36.0), "Host Steam")
+	var host_button := _make_panel_button(Vector2(190.0, 116.0), Vector2(158.0, 36.0), "Host Steam")
 	host_button.pressed.connect(_on_lobby_action_pressed.bind("host"))
 	lobby_panel.add_child(host_button)
 
-	var find_button := _make_panel_button(Vector2(350.0, 116.0), Vector2(148.0, 36.0), "Find Public")
+	var find_button := _make_panel_button(Vector2(362.0, 116.0), Vector2(158.0, 36.0), "Find Public")
 	find_button.pressed.connect(_on_lobby_action_pressed.bind("find"))
 	lobby_panel.add_child(find_button)
 
-	var paste_button := _make_panel_button(Vector2(350.0, 170.0), Vector2(148.0, 36.0), "Paste Code")
+	var paste_button := _make_panel_button(Vector2(362.0, 170.0), Vector2(158.0, 36.0), "Paste Code")
 	paste_button.pressed.connect(_paste_lobby_code)
 	lobby_panel.add_child(paste_button)
 
@@ -198,22 +229,40 @@ func _create_lobby_panel() -> void:
 
 	lobby_code_input = LineEdit.new()
 	lobby_code_input.position = Vector2(116.0, 170.0)
-	lobby_code_input.size = Vector2(214.0, 34.0)
+	lobby_code_input.size = Vector2(232.0, 34.0)
 	lobby_code_input.placeholder_text = "Paste or type Steam lobby id"
 	lobby_code_input.focus_mode = Control.FOCUS_ALL
 	lobby_code_input.text_submitted.connect(_on_lobby_code_submitted)
 	lobby_panel.add_child(lobby_code_input)
 
-	var join_button := _make_panel_button(Vector2(18.0, 222.0), Vector2(148.0, 34.0), "Join")
+	var join_button := _make_panel_button(Vector2(18.0, 222.0), Vector2(158.0, 34.0), "Join")
 	join_button.pressed.connect(_join_lobby_from_input)
 	lobby_panel.add_child(join_button)
 
-	lobby_status_label = _make_settings_label(Vector2(184.0, 218.0), Vector2(314.0, 64.0), "", 13)
+	copy_lobby_button = _make_panel_button(Vector2(190.0, 222.0), Vector2(158.0, 34.0), "Copy Lobby ID")
+	copy_lobby_button.pressed.connect(_on_lobby_action_pressed.bind("copy"))
+	copy_lobby_button.disabled = true
+	lobby_panel.add_child(copy_lobby_button)
+
+	ready_button = _make_panel_button(Vector2(362.0, 222.0), Vector2(158.0, 34.0), "Ready")
+	ready_button.pressed.connect(_on_lobby_action_pressed.bind("ready"))
+	ready_button.disabled = true
+	lobby_panel.add_child(ready_button)
+
+	lobby_id_label = _make_settings_label(Vector2(18.0, 266.0), Vector2(522.0, 26.0), "Lobby ID: -", 13)
+	lobby_panel.add_child(lobby_id_label)
+
+	lobby_status_label = _make_settings_label(Vector2(18.0, 294.0), Vector2(522.0, 42.0), "", 13)
 	lobby_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lobby_status_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	lobby_panel.add_child(lobby_status_label)
 
-	var back_button := _make_panel_button(Vector2(362.0, 306.0), Vector2(136.0, 30.0), "Back")
+	leave_lobby_button = _make_panel_button(Vector2(18.0, 354.0), Vector2(158.0, 30.0), "Leave Lobby")
+	leave_lobby_button.pressed.connect(_on_lobby_action_pressed.bind("leave"))
+	leave_lobby_button.disabled = true
+	lobby_panel.add_child(leave_lobby_button)
+
+	var back_button := _make_panel_button(Vector2(404.0, 354.0), Vector2(136.0, 30.0), "Back")
 	back_button.pressed.connect(_hide_lobby_panel)
 	lobby_panel.add_child(back_button)
 

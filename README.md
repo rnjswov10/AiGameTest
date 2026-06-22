@@ -52,7 +52,7 @@ The current prototype is a local 1v1 PvP roguelite tower-defense simulation with
 - Player A uses the left board.
 - Player B uses the right board.
 - Main menu buttons: `Local 1v1`, `Lobby`, `Settings`, and `Quit`.
-- The `Lobby` panel includes `Connect Steam`, `Host Steam`, `Find Public`, `Paste Code`, and direct numeric lobby ID join.
+- The `Lobby` panel includes `Connect Steam`, `Host Steam`, `Find Public`, `Paste Code`, `Copy Lobby ID`, `Ready`, and direct numeric lobby ID join.
 - Steam account login is handled by the Steam client. The game only checks the logged-in Steam account and displays the persona name and Steam ID.
 - Settings include fullscreen, borderless window, resolution, VSync, and master volume. They are saved to the local user settings file.
 - Click a cell to select it.
@@ -63,6 +63,7 @@ The current prototype is a local 1v1 PvP roguelite tower-defense simulation with
 - `R` restarts the match.
 - Steam lobby controls are available as buttons: `Host`, `Find`, `Join Code`, `Copy Code`, `Leave`, and `Restart`.
 - Keyboard shortcuts are still available: `H` host, `L` find lobby, `C` copy lobby id, `V` join clipboard lobby id, `Esc` leave lobby.
+- Online matches wait in the Steam lobby until both players press `Ready`.
 - In Steam online mode, host is Player A and client is Player B. Each side can use the player action buttons or `Q`, `W`, `E`, and `A` for their own board.
 - Steam lobbies store host metadata: `host_name`, `host_id`, `game_version`, `mode`, `protocol`, and match `seed`.
 
