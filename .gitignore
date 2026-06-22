@@ -1,0 +1,21 @@
+# Godot generated cache
+.godot/
+*.translation
+
+# Exported builds and local artifacts
+exports/*
+!exports/.gitkeep
+builds/*
+!builds/.gitkeep
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Local logs
+*.log

@@ -1,0 +1,22 @@
+---
+description: Godot collaboration rules for Cursor with Claude Sonnet
+globs:
+  - "**/*.gd"
+  - "**/*.tscn"
+  - "**/*.tres"
+  - "project.godot"
+alwaysApply: true
+---
+
+# Godot Collaboration Rules
+
+This repository uses Godot 4.7.x Standard with GDScript only.
+
+- Do not use lambda functions unless they are clearly necessary.
+- Prefer GDScript. Do not add C#/.NET files without explicit team agreement.
+- Check `git status` before editing.
+- Avoid broad scene or project settings rewrites.
+- Only one person should edit the same `*.tscn`, `project.godot`, or Input Map area at a time.
+- Do not commit generated `.godot/`, `exports/`, or `builds/` contents.
+- Commit Godot `*.import` files together with their source assets.
+- Use `cursor/<task>` branches for Cursor/Claude work and open PRs into `main`.
