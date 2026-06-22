@@ -11,10 +11,10 @@ const LEFT_PATH_X := 430.0
 const RIGHT_PATH_X := 850.0
 const PATH_TOP := 160.0
 const PATH_BOTTOM := 480.0
-const RELIC_CARD_SIZE := Vector2(150.0, 76.0)
+const RELIC_CARD_SIZE := Vector2(150.0, 102.0)
 const RELIC_CARD_GAP := 12.0
-const LEFT_RELIC_ORIGIN := Vector2(50.0, 520.0)
-const RIGHT_RELIC_ORIGIN := Vector2(760.0, 520.0)
+const LEFT_RELIC_ORIGIN := Vector2(50.0, 500.0)
+const RIGHT_RELIC_ORIGIN := Vector2(760.0, 500.0)
 const REROLL_SIZE := Vector2(474.0, 32.0)
 
 var match_controller: MatchController
@@ -143,7 +143,7 @@ func _create_relic_labels() -> void:
 	for player_id in range(2):
 		for option_index in range(3):
 			var card_rect := _get_relic_card_rect(player_id, option_index)
-			var label := _make_label(card_rect.position + Vector2(8.0, 5.0), card_rect.size - Vector2(16.0, 10.0), 10, HORIZONTAL_ALIGNMENT_LEFT)
+			var label := _make_label(card_rect.position + Vector2(8.0, 5.0), card_rect.size - Vector2(16.0, 10.0), 9, HORIZONTAL_ALIGNMENT_LEFT)
 			label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			label.visible = false

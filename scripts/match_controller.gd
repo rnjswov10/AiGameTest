@@ -100,12 +100,16 @@ func merge_selected_tower(player_id: int) -> void:
 
 
 func summon_challenge_boss(player_id: int) -> void:
-	if game_over or phase == MatchPhase.RELIC_SELECT:
+	if game_over:
 		return
 	if not _is_valid_player_id(player_id):
 		return
 
 	var player: PlayerState = players[player_id]
+	if phase != MatchPhase.COMBAT:
+		player.set_message("Challenge bosses can only be summoned during combat.")
+		return
+
 	if player.challenge_boss_used_this_stage:
 		player.set_message("Challenge boss already used this stage.")
 		return
@@ -122,12 +126,16 @@ func summon_challenge_boss(player_id: int) -> void:
 
 
 func send_attack_wave(player_id: int) -> void:
-	if game_over or phase == MatchPhase.RELIC_SELECT:
+	if game_over:
 		return
 	if not _is_valid_player_id(player_id):
 		return
 
 	var attacker: PlayerState = players[player_id]
+	if phase != MatchPhase.COMBAT:
+		attacker.set_message("Attack waves can only be sent during combat.")
+		return
+
 	if not attacker.spend_attack_gauge():
 		return
 
@@ -512,8 +520,10 @@ func _update_monsters(delta: float) -> void:
 
 			if monster.progress >= PATH_LENGTH:
 				player.hp -= monster.damage_to_base
-				player.set_message("%s leaked." % MonsterData.get_display_name(monster.monster_type))
-				_clear_challenge_boss_if_needed(player, monster)
+				if _is_active_challenge_boss(player, monster):
+					_fail_challenge_boss(player)
+				else:
+					player.set_message("%s leaked." % MonsterData.get_display_name(monster.monster_type))
 				player.monsters.remove_at(index)
 
 
@@ -673,10 +683,7 @@ func _update_challenge_boss_timers() -> void:
 		if boss != null:
 			player.monsters.erase(boss)
 
-		var penalty_duration := 8.0 * player.get_boss_penalty_multiplier()
-		player.pending_boss_penalty_timer = maxf(player.pending_boss_penalty_timer, penalty_duration)
-		player.challenge_boss_instance_id = 0
-		player.set_message("Boss failed. Next stage penalty queued.")
+		_fail_challenge_boss(player)
 
 
 func _find_monster_by_instance_id(player: PlayerState, instance_id: int) -> MonsterData:
@@ -686,11 +693,16 @@ func _find_monster_by_instance_id(player: PlayerState, instance_id: int) -> Mons
 	return null
 
 
-func _clear_challenge_boss_if_needed(player: PlayerState, monster: MonsterData) -> void:
-	if monster.get_instance_id() != player.challenge_boss_instance_id:
-		return
+func _is_active_challenge_boss(player: PlayerState, monster: MonsterData) -> bool:
+	return player.challenge_boss_instance_id != 0 and monster.get_instance_id() == player.challenge_boss_instance_id
+
+
+func _fail_challenge_boss(player: PlayerState) -> void:
+	var penalty_duration := 8.0 * player.get_boss_penalty_multiplier()
+	player.pending_boss_penalty_timer = maxf(player.pending_boss_penalty_timer, penalty_duration)
 	player.challenge_boss_instance_id = 0
 	player.challenge_boss_timer = 0.0
+	player.set_message("Boss failed. Next stage penalty queued.")
 
 
 func _all_monsters_cleared() -> bool:
