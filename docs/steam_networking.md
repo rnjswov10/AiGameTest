@@ -50,16 +50,17 @@ When `tools/godotsteam` is present, `scripts/export_windows.ps1` prefers the God
 
 ## Controls
 
-Main menu `Lobby` panel:
+Main menu `Steam 로비` screen:
 
-- `Connect Steam`: Initialize GodotSteam and read the currently logged-in Steam persona name and Steam ID.
-- `Host Steam`: Host a Steam lobby. The lobby id is copied to the clipboard.
-- `Find Public`: Search public Steam lobbies and join the first matching AiGameTest lobby.
-- `Paste Code`: Paste the clipboard lobby id into the lobby id field.
-- `Join`: Join the numeric Steam lobby id typed into the field.
-- `Copy Lobby ID`: Copy the current lobby id again so the host can send it to the other player.
-- `Ready`: Toggle local ready state. The match starts only after both players are ready.
-- `Leave Lobby`: Leave the current Steam lobby and return to offline menu state.
+- `Steam 연결`: Initialize GodotSteam and read the currently logged-in Steam persona name and Steam ID.
+- `로비 만들기`: Host a Steam lobby and move into the lobby waiting room. The lobby id is copied to the clipboard.
+- `공개 로비 찾기`: Search public Steam lobbies and join the first matching AiGameTest lobby.
+- `붙여넣기`: Paste the clipboard lobby id into the lobby id field.
+- `참가`: Join the numeric Steam lobby id typed into the field.
+- `+`: Open Steam's invite overlay for the current lobby.
+- `코드 복사`: Copy the current lobby id again as a fallback invite path.
+- `준비 완료`: Toggle local ready state. The match starts only after both players are ready.
+- `로비 나가기`: Leave the current Steam lobby and return to offline menu state.
 
 The game does not collect Steam credentials. Steam login happens in the Steam client, and the game only reads the active account through GodotSteam.
 
@@ -74,11 +75,12 @@ When a lobby is created, the host writes these lobby metadata fields:
 
 Lobby flow:
 
-1. Host clicks `Host Steam` and waits in the lobby panel.
-2. Host sends the copied lobby id to the opponent, or clicks `Copy Lobby ID` later to copy it again.
-3. Client enters the lobby id and clicks `Join`.
-4. Both players click `Ready`.
-5. The host starts the authoritative match and sends the first match snapshot to the client.
+1. Host clicks `로비 만들기` and waits in the lobby waiting room.
+2. Host clicks the `+` button to open the Steam invite overlay and invite the opponent.
+3. As a fallback, host can click `코드 복사` and send the lobby id manually.
+4. Client accepts the Steam invite, finds the public lobby, or enters the lobby id and clicks `참가`.
+5. Both players click `준비 완료`.
+6. The host starts the authoritative match and sends the first match snapshot to the client.
 
 In-game Steam buttons:
 
@@ -101,12 +103,12 @@ Online match controls:
 1. Install the GodotSteam 4.6.3 editor/templates under `tools/godotsteam/`.
 2. Start Steam on both machines with two different Steam accounts.
 3. Create local `steam_appid.txt` from the example, or launch through Steam with a real app id.
-4. Host runs the game, opens `Lobby`, and clicks `Connect Steam`.
+4. Host runs the game, opens `Steam 로비`, and clicks `Steam 연결`.
 5. The host verifies the displayed Steam persona name and Steam ID.
-6. Host clicks `Host Steam` and remains in the lobby panel.
-7. Host sends the lobby id to the client. `Copy Lobby ID` can copy it again at any time.
-8. Client opens `Lobby`, clicks `Connect Steam`, then either clicks `Find Public`, or receives the copied lobby id, types or pastes it into the lobby id field, and clicks `Join`.
-9. Both players click `Ready`.
+6. Host clicks `로비 만들기` and moves into the lobby waiting room.
+7. Host clicks `+`, selects a Steam friend, and sends the invite. `코드 복사` can copy the lobby id as a fallback.
+8. Client accepts the Steam invite, or opens `Steam 로비`, clicks `Steam 연결`, then clicks `공개 로비 찾기` or enters the copied lobby id and clicks `참가`.
+9. Both players click `준비 완료`.
 10. Host should enter the match as Player A; client should enter the match as Player B.
 11. Client commands should affect Player B on the host, then appear on the client through snapshots.
 

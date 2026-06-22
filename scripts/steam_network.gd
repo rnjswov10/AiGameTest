@@ -85,7 +85,9 @@ func initialize() -> bool:
 
 	steam_ready = true
 	_connect_steam_signals()
-	return refresh_account()
+	var account_ready := refresh_account()
+	_check_command_line_lobby()
+	return account_ready
 
 
 func refresh_account() -> bool:
@@ -176,6 +178,21 @@ func copy_lobby_code() -> bool:
 		return false
 	DisplayServer.clipboard_set(str(current_lobby_id))
 	_set_status("Copied lobby id %d to clipboard." % current_lobby_id)
+	return true
+
+
+func invite_friends() -> bool:
+	if not _require_steam_session():
+		return false
+	if current_lobby_id <= 0:
+		_set_status("Create or join a Steam lobby before inviting friends.")
+		return false
+	if not steam.has_method("activateGameOverlayInviteDialog"):
+		_set_status("Steam invite overlay is not available in this build.")
+		return false
+
+	steam.call("activateGameOverlayInviteDialog", current_lobby_id)
+	_set_status("Steam invite window opened. Select a friend to invite.")
 	return true
 
 
@@ -306,6 +323,7 @@ func _connect_steam_signals() -> void:
 	_connect_signal_if_available("lobby_joined", "_on_lobby_joined")
 	_connect_signal_if_available("lobby_match_list", "_on_lobby_match_list")
 	_connect_signal_if_available("lobby_chat_update", "_on_lobby_chat_update")
+	_connect_signal_if_available("join_requested", "_on_join_requested")
 	_connect_signal_if_available("p2p_session_request", "_on_p2p_session_request")
 	_connect_signal_if_available("p2p_session_connect_fail", "_on_p2p_session_connect_fail")
 
@@ -320,6 +338,24 @@ func _connect_signal_if_available(signal_name: String, method_name: String) -> v
 	if steam.is_connected(signal_name, callable):
 		return
 	steam.connect(signal_name, callable)
+
+
+func _check_command_line_lobby() -> void:
+	if current_lobby_id != 0:
+		return
+
+	var args := OS.get_cmdline_args()
+	if args.size() < 2:
+		return
+
+	for index in range(args.size() - 1):
+		if args[index] != "+connect_lobby":
+			continue
+
+		var lobby_text := str(args[index + 1])
+		if lobby_text.is_valid_int():
+			join_lobby(int(lobby_text))
+		return
 
 
 func _run_steam_callbacks() -> void:
@@ -615,6 +651,10 @@ func _on_lobby_chat_update(
 
 	peer_steam_id = changed_id
 	_update_lobby_wait_status()
+
+
+func _on_join_requested(lobby_id: int, _friend_id: int) -> void:
+	join_lobby(lobby_id)
 
 
 func _on_p2p_session_request(remote_steam_id: int) -> void:

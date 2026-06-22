@@ -200,6 +200,8 @@ func _run_network_action(action_name: String) -> void:
 			_toggle_lobby_ready()
 		"copy":
 			steam_network.copy_lobby_code()
+		"invite":
+			steam_network.invite_friends()
 		"leave":
 			_return_to_menu()
 		"restart":
@@ -367,6 +369,8 @@ func _on_main_menu_action_requested(action_name: String) -> void:
 			_toggle_lobby_ready()
 		"copy":
 			steam_network.copy_lobby_code()
+		"invite":
+			steam_network.invite_friends()
 		"leave":
 			_return_to_menu()
 		"quit":
