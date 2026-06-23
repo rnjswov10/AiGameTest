@@ -40,6 +40,8 @@ func _ready() -> void:
 	main_menu.settings_changed.connect(_on_menu_settings_changed)
 	main_menu.set_settings(current_settings)
 	main_menu.set_status_text(steam_network.get_status_text())
+	if steam_network.is_online() and not steam_network.online_match_active:
+		_show_lobby_waiting(steam_network.get_status_text())
 
 
 func _process(_delta: float) -> void:
@@ -62,9 +64,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		_handle_mouse_input(event)
 		return
-
-	if event is InputEventKey:
-		_handle_key_input(event)
 
 
 func _handle_mouse_input(event: InputEventMouseButton) -> void:
@@ -110,82 +109,6 @@ func _handle_mouse_input(event: InputEventMouseButton) -> void:
 	get_viewport().set_input_as_handled()
 
 
-func _handle_key_input(event: InputEventKey) -> void:
-	if not event.pressed or event.echo:
-		return
-
-	if _handle_network_key_input(event.keycode):
-		get_viewport().set_input_as_handled()
-		return
-
-	if steam_network != null and steam_network.is_online():
-		_handle_online_key_input(event.keycode)
-		get_viewport().set_input_as_handled()
-		return
-
-	match event.keycode:
-		KEY_Q:
-			_submit_command({"action": "summon", "player_id": 0})
-		KEY_W:
-			_submit_command({"action": "merge", "player_id": 0})
-		KEY_E:
-			_submit_command({"action": "attack", "player_id": 0})
-		KEY_A:
-			_submit_command({"action": "boss", "player_id": 0})
-		KEY_I:
-			_submit_command({"action": "summon", "player_id": 1})
-		KEY_O:
-			_submit_command({"action": "merge", "player_id": 1})
-		KEY_P:
-			_submit_command({"action": "attack", "player_id": 1})
-		KEY_J:
-			_submit_command({"action": "boss", "player_id": 1})
-		KEY_R:
-			_submit_command({"action": "restart", "player_id": 0})
-		_:
-			return
-
-	get_viewport().set_input_as_handled()
-
-
-func _handle_network_key_input(keycode: int) -> bool:
-	match keycode:
-		KEY_H:
-			_run_network_action("host")
-		KEY_L:
-			_run_network_action("find")
-		KEY_V:
-			_run_network_action("join")
-		KEY_C:
-			_run_network_action("copy")
-		KEY_ESCAPE:
-			_run_network_action("leave")
-		_:
-			return false
-
-	return true
-
-
-func _handle_online_key_input(keycode: int) -> void:
-	var player_id := steam_network.local_player_id
-	if player_id < 0:
-		return
-
-	match keycode:
-		KEY_Q:
-			_submit_command({"action": "summon", "player_id": player_id})
-		KEY_W:
-			_submit_command({"action": "merge", "player_id": player_id})
-		KEY_E:
-			_submit_command({"action": "attack", "player_id": player_id})
-		KEY_A:
-			_submit_command({"action": "boss", "player_id": player_id})
-		KEY_R:
-			_run_network_action("restart")
-		_:
-			return
-
-
 func _run_network_action(action_name: String) -> void:
 	match action_name:
 		"steam_login":
@@ -226,7 +149,9 @@ func _start_local_match() -> void:
 func _refresh_steam_login() -> void:
 	if steam_network == null:
 		return
-	steam_network.refresh_account()
+	if not steam_network.refresh_account():
+		_show_lobby_failure(steam_network.get_status_text())
+		return
 	if main_menu != null:
 		main_menu.set_status_text(steam_network.get_status_text())
 
@@ -238,7 +163,7 @@ func _start_host_match() -> void:
 		match_controller.reset_to_menu()
 		_show_lobby_waiting("Creating Steam lobby...")
 	else:
-		_show_menu("Steam host failed.")
+		_show_lobby_failure("Steam host failed.")
 
 
 func _start_find_lobby() -> void:
@@ -248,7 +173,7 @@ func _start_find_lobby() -> void:
 		match_controller.reset_to_menu()
 		_show_lobby_waiting("Searching Steam lobbies...")
 	else:
-		_show_menu("Steam lobby search failed.")
+		_show_lobby_failure("Steam lobby search failed.")
 
 
 func _start_join_lobby() -> void:
@@ -258,7 +183,7 @@ func _start_join_lobby() -> void:
 		match_controller.reset_to_menu()
 		_show_lobby_waiting("Joining Steam lobby...")
 	else:
-		_show_menu("Steam lobby join failed.")
+		_show_lobby_failure("Steam lobby join failed.")
 
 
 func _start_join_lobby_by_id(lobby_id: int) -> void:
@@ -268,7 +193,7 @@ func _start_join_lobby_by_id(lobby_id: int) -> void:
 		match_controller.reset_to_menu()
 		_show_lobby_waiting("Joining Steam lobby...")
 	else:
-		_show_menu("Steam lobby join failed.")
+		_show_lobby_failure("Steam lobby join failed.")
 
 
 func _toggle_lobby_ready() -> void:
@@ -294,6 +219,16 @@ func _show_lobby_waiting(status_text: String) -> void:
 	main_menu.set_status_text(steam_network.get_status_text())
 	main_menu.set_lobby_state(steam_network.get_lobby_snapshot())
 	main_menu.open_lobby_panel()
+
+
+func _show_lobby_failure(status_text: String) -> void:
+	game_started = false
+	board_view.visible = false
+	main_menu.visible = true
+	main_menu.set_menu_status(status_text)
+	main_menu.set_status_text(status_text)
+	main_menu.show_lobby_failure(status_text)
+	main_menu.set_lobby_state(steam_network.get_lobby_snapshot())
 
 
 func _show_menu(status_text: String = "Select a mode to start.") -> void:
@@ -384,6 +319,16 @@ func _on_main_menu_lobby_join_requested(lobby_id: int) -> void:
 
 
 func _on_steam_status_changed(status_text: String) -> void:
+	if _is_lobby_failure_status(status_text):
+		_show_lobby_failure(status_text)
+		return
+
+	if steam_network != null and steam_network.is_online() and not steam_network.online_match_active:
+		if game_started and match_controller != null:
+			match_controller.reset_to_menu()
+		_show_lobby_waiting(status_text)
+		return
+
 	if main_menu != null and main_menu.visible:
 		main_menu.set_status_text(status_text)
 		main_menu.set_lobby_state(steam_network.get_lobby_snapshot())
@@ -391,6 +336,26 @@ func _on_steam_status_changed(status_text: String) -> void:
 
 func _on_online_match_started() -> void:
 	_show_game()
+
+
+func _is_lobby_failure_status(status_text: String) -> bool:
+	var lower_status := status_text.to_lower()
+	var markers := [
+		"failed",
+		"invalid",
+		"not loaded",
+		"not logged in",
+		"not available",
+		"required",
+		"unavailable",
+		"no steam lobbies",
+		"no aigametest",
+		"does not contain",
+	]
+	for marker in markers:
+		if lower_status.contains(marker):
+			return true
+	return false
 
 
 func _on_menu_settings_changed(settings: Dictionary) -> void:

@@ -10,6 +10,7 @@ const RESOLUTION_OPTIONS := [
 	Vector2i(1600, 900),
 	Vector2i(1920, 1080),
 ]
+const DESIGN_SIZE := Vector2(1280.0, 720.0)
 
 var status_label: Label
 var steam_status_label: Label
@@ -17,7 +18,10 @@ var buttons: Dictionary = {}
 var settings_panel: Control
 var lobby_panel: Control
 var lobby_setup_section: Control
+var lobby_loading_section: Control
+var lobby_failure_section: Control
 var lobby_room_section: Control
+var lobby_view_state: String = "setup"
 var lobby_code_input: LineEdit
 var steam_account_label: Label
 var lobby_id_label: Label
@@ -31,6 +35,9 @@ var lobby_find_button: Button
 var lobby_join_button: Button
 var lobby_invite_button: Button
 var lobby_room_code_label: Label
+var lobby_room_status_label: Label
+var lobby_loading_status_label: Label
+var lobby_failure_status_label: Label
 var lobby_local_name_label: Label
 var lobby_local_meta_label: Label
 var lobby_local_ready_label: Label
@@ -52,13 +59,24 @@ var applying_settings: bool = false
 
 func _ready() -> void:
 	position = Vector2.ZERO
-	size = Vector2(1280.0, 720.0)
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	size = DESIGN_SIZE
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	get_viewport().size_changed.connect(_update_screen_layout)
+	_update_screen_layout()
 	_create_background()
 	_create_title()
 	_create_buttons()
 	_create_status_labels()
+
+
+func _update_screen_layout() -> void:
+	var viewport_size := get_viewport_rect().size
+	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+		return
+
+	var ui_scale := minf(viewport_size.x / DESIGN_SIZE.x, viewport_size.y / DESIGN_SIZE.y)
+	scale = Vector2(ui_scale, ui_scale)
+	position = (viewport_size - DESIGN_SIZE * ui_scale) * 0.5
 
 
 func set_status_text(text: String) -> void:
@@ -69,6 +87,12 @@ func set_status_text(text: String) -> void:
 		steam_account_label.text = text
 	if lobby_status_label != null:
 		lobby_status_label.text = text
+	if lobby_room_status_label != null:
+		lobby_room_status_label.text = text
+	if lobby_loading_status_label != null:
+		lobby_loading_status_label.text = text
+	if lobby_failure_status_label != null:
+		lobby_failure_status_label.text = text
 
 
 func set_lobby_state(lobby_state: Dictionary) -> void:
@@ -88,10 +112,14 @@ func set_lobby_state(lobby_state: Dictionary) -> void:
 	var peer_steam_id := int(lobby_state.get("peer_steam_id", 0))
 	var steam_connected := local_steam_id != 0
 
-	if lobby_setup_section != null:
-		lobby_setup_section.visible = not online
-	if lobby_room_section != null:
-		lobby_room_section.visible = online
+	if online:
+		if lobby_id > 0:
+			lobby_view_state = "room"
+		elif lobby_view_state != "loading":
+			lobby_view_state = "loading"
+	elif lobby_view_state != "failure":
+		lobby_view_state = "setup"
+	_sync_lobby_sections()
 
 	if lobby_title_label != null:
 		lobby_title_label.text = "Steam 로비"
@@ -190,10 +218,42 @@ func set_lobby_state(lobby_state: Dictionary) -> void:
 
 	if lobby_status_label != null:
 		lobby_status_label.text = status_text
+	if lobby_room_status_label != null:
+		lobby_room_status_label.text = status_text
 
 
 func open_lobby_panel() -> void:
+	if lobby_view_state == "":
+		lobby_view_state = "setup"
 	_show_lobby_panel()
+
+
+func show_lobby_loading(text: String) -> void:
+	lobby_view_state = "loading"
+	_set_lobby_feedback(text)
+	_show_lobby_panel()
+
+
+func show_lobby_failure(text: String) -> void:
+	lobby_view_state = "failure"
+	_set_lobby_feedback(text)
+	_show_lobby_panel()
+
+
+func show_lobby_setup() -> void:
+	lobby_view_state = "setup"
+	_sync_lobby_sections()
+
+
+func _sync_lobby_sections() -> void:
+	if lobby_setup_section != null:
+		lobby_setup_section.visible = lobby_view_state == "setup"
+	if lobby_loading_section != null:
+		lobby_loading_section.visible = lobby_view_state == "loading"
+	if lobby_failure_section != null:
+		lobby_failure_section.visible = lobby_view_state == "failure"
+	if lobby_room_section != null:
+		lobby_room_section.visible = lobby_view_state == "room"
 
 
 func set_menu_status(text: String) -> void:
@@ -383,7 +443,7 @@ func _create_lobby_panel() -> void:
 	lobby_find_button.pressed.connect(_on_lobby_action_pressed.bind("find"))
 	lobby_setup_section.add_child(lobby_find_button)
 
-	var code_title := _make_settings_label(Vector2(32.0, 258.0), Vector2(220.0, 26.0), "초대 코드로 참가", 17)
+	var code_title := _make_settings_label(Vector2(32.0, 258.0), Vector2(220.0, 26.0), "클립보드로 참가", 17)
 	lobby_setup_section.add_child(code_title)
 
 	var code_label := _make_settings_label(Vector2(32.0, 306.0), Vector2(90.0, 32.0), "Lobby ID", 14)
@@ -392,9 +452,9 @@ func _create_lobby_panel() -> void:
 	lobby_code_input = LineEdit.new()
 	lobby_code_input.position = Vector2(128.0, 304.0)
 	lobby_code_input.size = Vector2(276.0, 36.0)
-	lobby_code_input.placeholder_text = "Steam 로비 ID"
-	lobby_code_input.focus_mode = Control.FOCUS_ALL
-	lobby_code_input.text_submitted.connect(_on_lobby_code_submitted)
+	lobby_code_input.placeholder_text = "클립보드에서 로비 ID 가져오기"
+	lobby_code_input.editable = false
+	lobby_code_input.focus_mode = Control.FOCUS_NONE
 	lobby_setup_section.add_child(lobby_code_input)
 
 	var paste_button := _make_panel_button(Vector2(420.0, 304.0), Vector2(92.0, 36.0), "붙여넣기")
@@ -435,6 +495,66 @@ func _create_lobby_panel() -> void:
 	lobby_status_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	lobby_status_label.add_theme_color_override("font_color", Color(0.72, 0.80, 0.86))
 	lobby_setup_section.add_child(lobby_status_label)
+
+	lobby_loading_section = Control.new()
+	lobby_loading_section.position = Vector2(88.0, 152.0)
+	lobby_loading_section.size = Vector2(1104.0, 486.0)
+	lobby_loading_section.visible = false
+	lobby_panel.add_child(lobby_loading_section)
+
+	var loading_background := ColorRect.new()
+	loading_background.position = Vector2.ZERO
+	loading_background.size = lobby_loading_section.size
+	loading_background.color = Color(0.095, 0.110, 0.125)
+	lobby_loading_section.add_child(loading_background)
+
+	var loading_title := _make_settings_label(Vector2(60.0, 128.0), Vector2(760.0, 48.0), "로비 연결 중", 32)
+	loading_title.add_theme_color_override("font_color", Color(0.94, 0.96, 1.0))
+	lobby_loading_section.add_child(loading_title)
+
+	var loading_subtitle := _make_settings_label(Vector2(62.0, 188.0), Vector2(760.0, 34.0), "Steam 응답을 기다리는 중입니다.", 17)
+	loading_subtitle.add_theme_color_override("font_color", Color(0.66, 0.74, 0.80))
+	lobby_loading_section.add_child(loading_subtitle)
+
+	lobby_loading_status_label = _make_settings_label(Vector2(62.0, 254.0), Vector2(940.0, 84.0), "", 15)
+	lobby_loading_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lobby_loading_status_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	lobby_loading_status_label.add_theme_color_override("font_color", Color(0.78, 0.84, 0.88))
+	lobby_loading_section.add_child(lobby_loading_status_label)
+
+	var loading_back_button := _make_panel_button(Vector2(62.0, 382.0), Vector2(150.0, 42.0), "취소")
+	loading_back_button.pressed.connect(_on_lobby_action_pressed.bind("leave"))
+	lobby_loading_section.add_child(loading_back_button)
+
+	lobby_failure_section = Control.new()
+	lobby_failure_section.position = Vector2(88.0, 152.0)
+	lobby_failure_section.size = Vector2(1104.0, 486.0)
+	lobby_failure_section.visible = false
+	lobby_panel.add_child(lobby_failure_section)
+
+	var failure_background := ColorRect.new()
+	failure_background.position = Vector2.ZERO
+	failure_background.size = lobby_failure_section.size
+	failure_background.color = Color(0.130, 0.095, 0.095)
+	lobby_failure_section.add_child(failure_background)
+
+	var failure_title := _make_settings_label(Vector2(60.0, 118.0), Vector2(760.0, 48.0), "로비 연결 실패", 32)
+	failure_title.add_theme_color_override("font_color", Color(1.0, 0.86, 0.80))
+	lobby_failure_section.add_child(failure_title)
+
+	lobby_failure_status_label = _make_settings_label(Vector2(62.0, 196.0), Vector2(940.0, 104.0), "", 15)
+	lobby_failure_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lobby_failure_status_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	lobby_failure_status_label.add_theme_color_override("font_color", Color(0.92, 0.78, 0.74))
+	lobby_failure_section.add_child(lobby_failure_status_label)
+
+	var failure_setup_button := _make_panel_button(Vector2(62.0, 358.0), Vector2(158.0, 42.0), "로비 선택으로")
+	failure_setup_button.pressed.connect(show_lobby_setup)
+	lobby_failure_section.add_child(failure_setup_button)
+
+	var failure_steam_button := _make_panel_button(Vector2(242.0, 358.0), Vector2(150.0, 42.0), "Steam 재확인")
+	failure_steam_button.pressed.connect(_on_lobby_action_pressed.bind("steam_login"))
+	lobby_failure_section.add_child(failure_steam_button)
 
 	lobby_room_section = Control.new()
 	lobby_room_section.position = Vector2(88.0, 150.0)
@@ -506,11 +626,11 @@ func _create_lobby_panel() -> void:
 	lobby_peer_ready_label.add_theme_color_override("font_color", Color(0.90, 0.76, 0.36))
 	lobby_room_section.add_child(lobby_peer_ready_label)
 
-	lobby_invite_button = _make_panel_button(Vector2(1018.0, 178.0), Vector2(58.0, 58.0), "+")
+	lobby_invite_button = _make_panel_button(Vector2(986.0, 178.0), Vector2(90.0, 58.0), "+ 초대")
 	lobby_invite_button.tooltip_text = "Steam 친구 초대"
 	lobby_invite_button.pressed.connect(_on_lobby_action_pressed.bind("invite"))
 	lobby_invite_button.disabled = true
-	lobby_invite_button.add_theme_font_size_override("font_size", 30)
+	lobby_invite_button.add_theme_font_size_override("font_size", 22)
 	lobby_room_section.add_child(lobby_invite_button)
 
 	ready_button = _make_panel_button(Vector2(0.0, 342.0), Vector2(174.0, 42.0), "준비 완료")
@@ -531,6 +651,18 @@ func _create_lobby_panel() -> void:
 	var back_button := _make_panel_button(Vector2(950.0, 342.0), Vector2(154.0, 42.0), "메인 메뉴")
 	back_button.pressed.connect(_hide_lobby_panel)
 	lobby_room_section.add_child(back_button)
+
+	var room_message_background := ColorRect.new()
+	room_message_background.position = Vector2(0.0, 416.0)
+	room_message_background.size = Vector2(1104.0, 78.0)
+	room_message_background.color = Color(0.090, 0.104, 0.118)
+	lobby_room_section.add_child(room_message_background)
+
+	lobby_room_status_label = _make_settings_label(Vector2(22.0, 426.0), Vector2(1060.0, 56.0), "", 14)
+	lobby_room_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lobby_room_status_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	lobby_room_status_label.add_theme_color_override("font_color", Color(0.72, 0.80, 0.86))
+	lobby_room_section.add_child(lobby_room_status_label)
 
 
 func _create_settings_panel() -> void:
@@ -645,6 +777,7 @@ func _hide_settings_panel() -> void:
 func _show_lobby_panel() -> void:
 	_hide_settings_panel()
 	lobby_panel.visible = true
+	_sync_lobby_sections()
 	status_label.visible = false
 	steam_status_label.visible = false
 	steam_account_label.text = steam_status_label.text
@@ -673,26 +806,33 @@ func _on_lobby_action_pressed(action_name: String) -> void:
 	action_requested.emit(action_name)
 
 
+func _set_lobby_feedback(text: String) -> void:
+	if lobby_status_label != null:
+		lobby_status_label.text = text
+	if lobby_room_status_label != null:
+		lobby_room_status_label.text = text
+
+
 func _paste_lobby_code() -> void:
 	lobby_code_input.text = DisplayServer.clipboard_get().strip_edges()
+	if lobby_code_input.text.is_valid_int():
+		_set_lobby_feedback("클립보드에서 로비 ID를 가져왔습니다.")
+	else:
+		_set_lobby_feedback("클립보드에 숫자 로비 ID가 없습니다.")
 
 
 func _join_lobby_from_input() -> void:
 	var lobby_text := lobby_code_input.text.strip_edges()
 	if not lobby_text.is_valid_int():
-		lobby_status_label.text = "Enter a numeric Steam lobby id."
+		_set_lobby_feedback("클립보드에서 숫자 로비 ID를 먼저 가져와 주세요.")
 		return
 
 	var lobby_id := int(lobby_text)
 	if lobby_id <= 0:
-		lobby_status_label.text = "Lobby id must be greater than 0."
+		_set_lobby_feedback("로비 ID는 0보다 커야 합니다.")
 		return
 
 	lobby_join_requested.emit(lobby_id)
-
-
-func _on_lobby_code_submitted(_text: String) -> void:
-	_join_lobby_from_input()
 
 
 func _on_fullscreen_toggled(enabled: bool) -> void:

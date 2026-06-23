@@ -55,12 +55,14 @@ Main menu `Steam 로비` screen:
 - `Steam 연결`: Initialize GodotSteam and read the currently logged-in Steam persona name and Steam ID.
 - `로비 만들기`: Host a Steam lobby and move into the lobby waiting room. The lobby id is copied to the clipboard.
 - `공개 로비 찾기`: Search public Steam lobbies and join the first matching AiGameTest lobby.
-- `붙여넣기`: Paste the clipboard lobby id into the lobby id field.
-- `참가`: Join the numeric Steam lobby id typed into the field.
-- `+`: Open Steam's invite overlay for the current lobby.
+- `붙여넣기`: Paste the clipboard lobby id into the read-only lobby id field.
+- `참가`: Join the numeric Steam lobby id currently shown in the lobby id field.
+- `+ 초대`: Open Steam's invite overlay for the current lobby.
 - `코드 복사`: Copy the current lobby id again as a fallback invite path.
 - `준비 완료`: Toggle local ready state. The match starts only after both players are ready.
 - `로비 나가기`: Leave the current Steam lobby and return to offline menu state.
+
+Lobby creation, public search, and lobby join attempts show a loading screen while waiting for Steam. Failed Steam login, lobby creation, lobby search, lobby join, or invite overlay calls show a failure screen with the Steam status message.
 
 The game does not collect Steam credentials. Steam login happens in the Steam client, and the game only reads the active account through GodotSteam.
 
@@ -76,9 +78,9 @@ When a lobby is created, the host writes these lobby metadata fields:
 Lobby flow:
 
 1. Host clicks `로비 만들기` and waits in the lobby waiting room.
-2. Host clicks the `+` button to open the Steam invite overlay and invite the opponent.
+2. Host clicks the `+ 초대` button to open the Steam invite overlay and invite the opponent.
 3. As a fallback, host can click `코드 복사` and send the lobby id manually.
-4. Client accepts the Steam invite, finds the public lobby, or enters the lobby id and clicks `참가`.
+4. Client accepts the Steam invite, finds the public lobby, or uses `붙여넣기` and `참가` with a copied lobby id.
 5. Both players click `준비 완료`.
 6. The host starts the authoritative match and sends the first match snapshot to the client.
 
@@ -88,15 +90,12 @@ In-game Steam buttons:
 - `Leave`: Leave the Steam lobby and return to the main menu.
 - `Restart`: Restart the local match or host match.
 
-Keyboard shortcuts are still available: `H`, `L`, `V`, `C`, `Esc`, and `R`.
-
 Online match controls:
 
 - Host is Player A.
 - Client is Player B.
 - Each side can use the on-screen `Summon`, `Merge`, `Attack`, and `Boss` buttons.
-- Keyboard shortcuts are still available: `Q` summon, `W` merge, `E` attack wave, `A` challenge boss.
-- Only the host can restart with `R`.
+- Only the host can restart with the on-screen `Restart` button.
 
 ## Test Flow
 
@@ -106,8 +105,8 @@ Online match controls:
 4. Host runs the game, opens `Steam 로비`, and clicks `Steam 연결`.
 5. The host verifies the displayed Steam persona name and Steam ID.
 6. Host clicks `로비 만들기` and moves into the lobby waiting room.
-7. Host clicks `+`, selects a Steam friend, and sends the invite. `코드 복사` can copy the lobby id as a fallback.
-8. Client accepts the Steam invite, or opens `Steam 로비`, clicks `Steam 연결`, then clicks `공개 로비 찾기` or enters the copied lobby id and clicks `참가`.
+7. Host clicks `+ 초대`, selects a Steam friend, and sends the invite. `코드 복사` can copy the lobby id as a fallback.
+8. Client accepts the Steam invite, or opens `Steam 로비`, clicks `Steam 연결`, then clicks `공개 로비 찾기` or uses `붙여넣기` and `참가` with the copied lobby id.
 9. Both players click `준비 완료`.
 10. Host should enter the match as Player A; client should enter the match as Player B.
 11. Client commands should affect Player B on the host, then appear on the client through snapshots.

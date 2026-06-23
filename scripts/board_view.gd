@@ -373,7 +373,7 @@ func _get_center_status_text() -> String:
 
 func _get_info_text(player_a: PlayerState, player_b: PlayerState) -> String:
 	if match_controller.game_over:
-		return "Press R to restart."
+		return "Click Restart to play again."
 
 	var message_text := match_controller.last_event_text
 	if player_a.message != "":
@@ -391,13 +391,13 @@ func _get_info_text(player_a: PlayerState, player_b: PlayerState) -> String:
 		var local_name := "Player A"
 		if match_controller.network_local_player_id == 1:
 			local_name = "Player B"
-		return "Online %s: Q summon, W merge, E attack, A boss | H host, L find, C copy, V join, Esc leave | %s | %s" % [
+		return "Online %s: use the on-screen buttons and board clicks. | %s | %s" % [
 			local_name,
 			message_text,
 			match_controller.network_status_text,
 		]
 
-	return "A: Q summon, W merge, E attack, A boss | B: I summon, O merge, P attack, J boss | H host, L find, C copy, V join | R restart | %s | %s" % [
+	return "Use the on-screen player buttons and board clicks. | %s | %s" % [
 		message_text,
 		match_controller.network_status_text,
 	]

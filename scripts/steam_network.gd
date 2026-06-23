@@ -610,7 +610,7 @@ func _on_lobby_joined(lobby_id: int, _permissions: int, _locked: bool, response:
 		host_name = "host"
 	peer_persona_name = host_name
 	_set_lobby_member_data("ready", "0")
-	_set_status("Joined %s's lobby %d. Press Ready when prepared." % [
+	_set_status("Joined %s's lobby %d. Click Ready when prepared." % [
 		host_name,
 		lobby_id,
 	])
